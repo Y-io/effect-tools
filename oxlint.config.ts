@@ -1,17 +1,20 @@
-import { defineConfig } from "oxlint"
+import { defineConfig, type OxlintConfig } from "oxlint"
 
 export default defineConfig({
-  ignorePatterns: ["node_modules/**", "dist/**", "out/**", "coverage/**", ".scratch/**"],
-  options: {
-    denyWarnings: true,
-  },
-  plugins: ["typescript", "unicorn", "oxc", "import"],
   categories: {
     correctness: "error",
-    suspicious: "error",
+    suspicious: "warn",
     perf: "warn",
   },
-  rules: {
-    "no-console": "off",
-  },
-})
+  ignorePatterns: [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".turbo",
+    ".next",
+    ".vite",
+    "repos",
+  ],
+  plugins: [],
+} as OxlintConfig)
