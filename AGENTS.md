@@ -2,6 +2,10 @@
 
 项目沟通、项目文档和面向维护者的说明尽量使用中文；代码标识符、协议字段、命令、错误信息和第三方 API 名称按其原始语言保留。
 
+## Runtime and package manager
+
+本仓库使用 Bun 作为运行时、包管理器和脚本执行器。不要新增 Node 专用运行时依赖、npm/pnpm/yarn lockfile，或要求用户通过 `node`、`npm`、`pnpm`、`yarn` 执行项目命令。
+
 ## Agent skills
 
 ### Issue tracker

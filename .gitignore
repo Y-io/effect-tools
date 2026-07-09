@@ -1,0 +1,34 @@
+# 依赖（bun install）
+node_modules
+
+# 构建输出
+out
+dist
+*.tgz
+
+# 覆盖率
+coverage
+*.lcov
+
+# 日志
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv 环境变量文件
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# 缓存
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ 系 IDE
+.idea
+
+# Finder（macOS）目录配置
+.DS_Store
