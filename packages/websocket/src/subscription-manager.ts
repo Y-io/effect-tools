@@ -53,8 +53,6 @@ export interface SubscriptionManager {
     protocol: ProtocolDefinition<MessageSchema>,
     definition: SubscriptionDefinition,
   ) => Stream.Stream<Schema.Schema.Type<MessageSchema>>
-  /** 按协议键与 identity 向指定订阅实例广播消息。 */
-  readonly publish: (protocolKey: string, identity: string, message: unknown) => Effect.Effect<void>
   /** 按稳定创建顺序查找首个粗匹配的活跃订阅实例。 */
   readonly match: (parsed: unknown) => Effect.Effect<Option.Option<SubscriptionMatch>>
 }
@@ -180,17 +178,6 @@ export const makeSubscriptionManager = (
       )
     }
 
-    /** 查找指定实例并广播已解码消息；实例不存在时安静丢弃。 */
-    const publish: SubscriptionManager["publish"] = (protocolKey, identity, message) =>
-      Effect.gen(function* () {
-        const state = yield* SynchronizedRef.get(stateRef)
-        const record = HashMap.get(
-          state.records,
-          makeSubscriptionInstanceKey(protocolKey, identity),
-        )
-        if (Option.isSome(record)) yield* PubSub.publish(record.value.messages, message)
-      })
-
     /** 在当前不可变状态快照中执行确定性的首匹配路由。 */
     const match: SubscriptionManager["match"] = (parsed) =>
       SynchronizedRef.get(stateRef).pipe(
@@ -210,5 +197,5 @@ export const makeSubscriptionManager = (
         }),
       )
 
-    return { stream, publish, match }
+    return { stream, match }
   })

@@ -17,6 +17,7 @@ import {
   type SubscriptionControl,
   type SubscriptionManager,
 } from "../src/index"
+import { publishMatched } from "./support/subscription-manager"
 
 const runScoped = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(effect))
@@ -76,7 +77,7 @@ describe("订阅管理器", () => {
 
         expect(controls).toEqual([{ type: "subscribe", id: "resource-1" }])
 
-        yield* manager.publish("resourceUpdated", "resource-1", { id: "resource-1", value: 1 })
+        yield* publishMatched(manager, { id: "resource-1" }, { id: "resource-1", value: 1 })
 
         expect(yield* Deferred.await(firstMessage)).toEqual({ id: "resource-1", value: 1 })
         expect(yield* Deferred.await(secondMessage)).toEqual({ id: "resource-1", value: 1 })
@@ -133,12 +134,12 @@ describe("订阅管理器", () => {
         )
 
         const resource1 = { id: "resource-1", value: 1 }
-        yield* manager.publish("resourceUpdated", "resource-1", resource1)
+        yield* publishMatched(manager, resource1, resource1)
         expect(yield* Deferred.await(firstMessage)).toEqual(resource1)
         expect(Option.isNone(yield* Deferred.poll(secondMessage))).toBe(true)
 
         const resource2 = { id: "resource-2", value: 2 }
-        yield* manager.publish("resourceUpdated", "resource-2", resource2)
+        yield* publishMatched(manager, resource2, resource2)
         expect(yield* Deferred.await(secondMessage)).toEqual(resource2)
 
         yield* Scope.close(firstScope, Exit.void)
@@ -190,10 +191,10 @@ describe("订阅管理器", () => {
           Effect.eventually,
         )
 
-        yield* manager.publish("priceUpdated", "prices", 1)
+        yield* publishMatched(manager, 1, 1)
         yield* Deferred.await(firstStarted)
-        yield* manager.publish("priceUpdated", "prices", 2)
-        yield* manager.publish("priceUpdated", "prices", 3)
+        yield* publishMatched(manager, 2, 2)
+        yield* publishMatched(manager, 3, 3)
         yield* Deferred.succeed(resumeFirst, undefined)
         const values = yield* Ref.get(firstValues).pipe(
           Effect.filterOrFail((current) => current.length === 2),
@@ -210,7 +211,7 @@ describe("订阅管理器", () => {
         )
         expect(Option.isNone(yield* Deferred.poll(secondValue))).toBe(true)
 
-        yield* manager.publish("priceUpdated", "prices", 4)
+        yield* publishMatched(manager, 4, 4)
         yield* Deferred.await(firstReceivedFour)
         expect(yield* Deferred.await(secondValue)).toBe(4)
 
@@ -259,7 +260,7 @@ describe("订阅管理器", () => {
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
         )
-        yield* manager.publish("priceUpdated", "prices", 1)
+        yield* publishMatched(manager, 1, 1)
         expect(yield* Fiber.await(failingConsumer)).toEqual(Exit.fail("consumer failed"))
         expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
 
@@ -318,7 +319,7 @@ describe("订阅管理器", () => {
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
         )
-        yield* manager.publish("priceUpdated", "market-price", 101)
+        yield* publishMatched(manager, 101, 101)
         expect(yield* Deferred.await(firstMessage)).toBe(101)
         yield* Scope.close(firstScope, Exit.void)
 
@@ -331,7 +332,7 @@ describe("订阅管理器", () => {
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
         )
-        yield* manager.publish("priceUpdated", "market-price", 102)
+        yield* publishMatched(manager, 102, 102)
         expect(yield* Deferred.await(secondMessage)).toBe(102)
         yield* Scope.close(secondScope, Exit.void)
 
@@ -425,7 +426,7 @@ describe("订阅管理器", () => {
           Effect.gen(function* () {
             controls.push(control)
             if (control === "subscribe:prices") {
-              yield* manager.publish("priceUpdated", "prices", 101)
+              yield* publishMatched(manager, 101, 101)
             }
           }),
         )
@@ -544,7 +545,13 @@ describe("订阅管理器", () => {
     const controls: Array<SubscriptionControl> = []
     const priceProtocol = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity === "BTC",
+      match: (parsed: unknown, identity: string) =>
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "type" in parsed &&
+        parsed.type === "price" &&
+        "id" in parsed &&
+        parsed.id === identity,
       subscription: () => ({
         identity: "BTC",
         subscribe: "subscribe:price:BTC",
@@ -553,7 +560,13 @@ describe("订阅管理器", () => {
     })
     const statusProtocol = defineProtocol({
       schema: Schema.String,
-      match: (_parsed: unknown, identity: string) => identity === "BTC",
+      match: (parsed: unknown, identity: string) =>
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "type" in parsed &&
+        parsed.type === "status" &&
+        "id" in parsed &&
+        parsed.id === identity,
       subscription: () => ({
         identity: "BTC",
         subscribe: "subscribe:status:BTC",
@@ -588,11 +601,11 @@ describe("订阅管理器", () => {
 
         expect(controls).toEqual(["subscribe:price:BTC", "subscribe:status:BTC"])
 
-        yield* manager.publish("priceUpdated", "BTC", 101)
+        yield* publishMatched(manager, { type: "price", id: "BTC" }, 101)
         expect(yield* Deferred.await(priceMessage)).toBe(101)
         expect(Option.isNone(yield* Deferred.poll(statusMessage))).toBe(true)
 
-        yield* manager.publish("statusChanged", "BTC", "active")
+        yield* publishMatched(manager, { type: "status", id: "BTC" }, "active")
         expect(yield* Deferred.await(statusMessage)).toBe("active")
 
         yield* Scope.close(priceScope, Exit.void)
@@ -622,7 +635,7 @@ describe("订阅管理器", () => {
     const controls: Array<SubscriptionControl> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity.length > 0,
+      match: (parsed: unknown, identity: string) => parsed === identity,
       subscription: (identity: string) => ({
         identity,
         subscribe: `subscribe:${identity}`,
@@ -661,7 +674,7 @@ describe("订阅管理器", () => {
             Effect.filterOrFail(FiberStatus.isSuspended),
             Effect.eventually,
           )
-          yield* manager.publish("priceUpdated", "B", 202)
+          yield* publishMatched(manager, "B", 202)
 
           expect(yield* Deferred.await(secondMessage)).toBe(202)
           expect(controls).toEqual(["subscribe:A"])
