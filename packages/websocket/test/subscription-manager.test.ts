@@ -11,7 +11,12 @@ import {
   Scope,
   Stream,
 } from "effect"
-import { defineProtocol, makeSubscriptionManager, type SubscriptionControl } from "../src/index"
+import {
+  defineProtocol,
+  makeSubscriptionManager,
+  type SubscriptionControl,
+  type SubscriptionManager,
+} from "../src/index"
 
 describe("订阅管理器", () => {
   /**
@@ -385,6 +390,54 @@ describe("订阅管理器", () => {
           concurrency: "unbounded",
           discard: true,
         })
+      }),
+    )
+  })
+
+  /**
+   * 测试将验证：
+   *
+   * 1. 首个消费者建立订阅实例和广播订阅后才发送 subscribe。
+   * 2. control writer 处理 subscribe 时立即发布服务器响应。
+   * 3. 首个消费者不会丢失该即时响应。
+   * 4. 消费者退出时只产生一次 unsubscribe。
+   * 5. 最终控制消息严格为 subscribe → unsubscribe。
+   */
+  test("本地订阅先于 subscribe 建立并接收即时响应", async () => {
+    const controls: Array<SubscriptionControl> = []
+    const protocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity === "prices",
+      subscription: () => ({
+        identity: "prices",
+        subscribe: "subscribe:prices",
+        unsubscribe: "unsubscribe:prices",
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        let manager: SubscriptionManager
+        manager = yield* makeSubscriptionManager((control) =>
+          Effect.gen(function* () {
+            controls.push(control)
+            if (control === "subscribe:prices") {
+              yield* manager.publish("priceUpdated", "prices", 101)
+            }
+          }),
+        )
+        const scope = yield* Scope.make()
+        const message = yield* Deferred.make<number>()
+        const consumer = yield* Stream.runForEach(
+          manager.stream("priceUpdated", protocol, protocol.subscription()),
+          (value) => Deferred.succeed(message, value),
+        ).pipe(Effect.forkIn(scope))
+
+        expect(yield* Deferred.await(message)).toBe(101)
+
+        yield* Fiber.interrupt(consumer)
+        expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
+        yield* Scope.close(scope, Exit.void)
       }),
     )
   })

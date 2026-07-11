@@ -83,12 +83,10 @@ export const makeSubscriptionManager = (
       )
 
     const publish: SubscriptionManager["publish"] = (protocolKey, identity, message) =>
-      semaphore.withPermits(1)(
-        Effect.gen(function* () {
-          const record = records.get(protocolKey)?.get(identity)
-          if (record !== undefined) yield* PubSub.publish(record.messages, message)
-        }),
-      )
+      Effect.gen(function* () {
+        const record = records.get(protocolKey)?.get(identity)
+        if (record !== undefined) yield* PubSub.publish(record.messages, message)
+      })
 
     return { stream, publish }
   })
