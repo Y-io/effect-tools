@@ -173,4 +173,58 @@ describe("订阅管理器", () => {
       }),
     )
   })
+
+  test("消费失败与 Fiber 中断都会自动释放订阅引用", async () => {
+    const controls: Array<SubscriptionControl> = []
+    const protocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity === "prices",
+      subscription: () => ({
+        identity: "prices",
+        subscribe: "subscribe:prices",
+        unsubscribe: "unsubscribe:prices",
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const manager = yield* makeSubscriptionManager((control) =>
+          Effect.sync(() => controls.push(control)),
+        )
+        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+
+        const failureScope = yield* Scope.make()
+        const failingConsumer = yield* stream.pipe(
+          Stream.take(1),
+          Stream.concat(Stream.fail("consumer failed")),
+          Stream.runDrain,
+          Effect.forkIn(failureScope),
+        )
+        yield* Fiber.status(failingConsumer).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+        yield* manager.publish("priceUpdated", "prices", 1)
+        expect(yield* Fiber.await(failingConsumer)).toEqual(Exit.fail("consumer failed"))
+        expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
+
+        const interruptionScope = yield* Scope.make()
+        const interruptedConsumer = yield* Stream.runDrain(stream).pipe(Effect.forkIn(interruptionScope))
+        yield* Fiber.status(interruptedConsumer).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+        yield* Fiber.interrupt(interruptedConsumer)
+        expect(controls).toEqual([
+          "subscribe:prices",
+          "unsubscribe:prices",
+          "subscribe:prices",
+          "unsubscribe:prices",
+        ])
+
+        yield* Scope.close(failureScope, Exit.void)
+        yield* Scope.close(interruptionScope, Exit.void)
+      }),
+    )
+  })
 })
