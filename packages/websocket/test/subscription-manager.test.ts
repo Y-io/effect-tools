@@ -496,4 +496,81 @@ describe("订阅管理器", () => {
       }),
     )
   })
+
+  /**
+   * 测试将验证：
+   *
+   * 1. 两个不同协议键可以使用相同 identity 建立订阅实例。
+   * 2. 两个实例分别产生自己的 subscribe 控制消息。
+   * 3. 按第一个协议键发布的消息只由第一个消费者接收。
+   * 4. 按第二个协议键发布的消息只由第二个消费者接收。
+   * 5. 两个实例分别产生自己的 unsubscribe 控制消息。
+   * 6. 实例唯一键是 protocolKey 与 identity 的组合，而不是全局 identity。
+   */
+  test("不同协议键下相同 identity 仍是独立订阅实例", async () => {
+    const controls: Array<SubscriptionControl> = []
+    const priceProtocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity === "BTC",
+      subscription: () => ({
+        identity: "BTC",
+        subscribe: "subscribe:price:BTC",
+        unsubscribe: "unsubscribe:price:BTC",
+      }),
+    })
+    const statusProtocol = defineProtocol({
+      schema: Schema.String,
+      match: (_parsed: unknown, identity: string) => identity === "BTC",
+      subscription: () => ({
+        identity: "BTC",
+        subscribe: "subscribe:status:BTC",
+        unsubscribe: "unsubscribe:status:BTC",
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const manager = yield* makeSubscriptionManager((control) =>
+          Effect.sync(() => controls.push(control)),
+        )
+        const priceScope = yield* Scope.make()
+        const statusScope = yield* Scope.make()
+        const priceMessage = yield* Deferred.make<number>()
+        const statusMessage = yield* Deferred.make<string>()
+
+        const priceConsumer = yield* Stream.runForEach(
+          manager.stream("priceUpdated", priceProtocol, priceProtocol.subscription()),
+          (message) => Deferred.succeed(priceMessage, message),
+        ).pipe(Effect.forkIn(priceScope))
+        const statusConsumer = yield* Stream.runForEach(
+          manager.stream("statusChanged", statusProtocol, statusProtocol.subscription()),
+          (message) => Deferred.succeed(statusMessage, message),
+        ).pipe(Effect.forkIn(statusScope))
+        yield* Effect.all([Fiber.status(priceConsumer), Fiber.status(statusConsumer)], {
+          concurrency: "unbounded",
+        }).pipe(
+          Effect.filterOrFail((statuses) => statuses.every(FiberStatus.isSuspended)),
+          Effect.eventually,
+        )
+
+        expect(controls).toEqual(["subscribe:price:BTC", "subscribe:status:BTC"])
+
+        yield* manager.publish("priceUpdated", "BTC", 101)
+        expect(yield* Deferred.await(priceMessage)).toBe(101)
+        expect(Option.isNone(yield* Deferred.poll(statusMessage))).toBe(true)
+
+        yield* manager.publish("statusChanged", "BTC", "active")
+        expect(yield* Deferred.await(statusMessage)).toBe("active")
+
+        yield* Scope.close(priceScope, Exit.void)
+        yield* Scope.close(statusScope, Exit.void)
+        expect(controls).toEqual([
+          "subscribe:price:BTC",
+          "subscribe:status:BTC",
+          "unsubscribe:price:BTC",
+          "unsubscribe:status:BTC",
+        ])
+      }),
+    )
+  })
 })
