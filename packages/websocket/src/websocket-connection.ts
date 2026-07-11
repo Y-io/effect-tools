@@ -21,12 +21,14 @@ export const makeWebSocketConnection = (
     const opened = yield* Deferred.make<void, Socket.SocketError>()
     const termination = yield* Deferred.make<void>()
     const closeRequested = yield* Ref.make(false)
+    const active = yield* Ref.make(true)
     const writer = yield* socket.writer
     const sendSemaphore = yield* Effect.makeSemaphore(1)
 
     /** runRaw 完成时先释放 epoch 资源，再向构造方或外部报告结果。 */
     const finish = (exit: Exit.Exit<void, Socket.SocketError>) =>
       Effect.gen(function* () {
+        yield* Ref.set(active, false)
         yield* Queue.shutdown(frames)
 
         if (!(yield* Deferred.isDone(opened))) {
@@ -62,7 +64,17 @@ export const makeWebSocketConnection = (
 
     const send: WebSocketConnection["send"] = (control) =>
       sendSemaphore.withPermits(1)(
-        writer(control).pipe(
+        Ref.get(active).pipe(
+          Effect.flatMap((isActive) =>
+            isActive
+              ? writer(control)
+              : Effect.fail(
+                  new Socket.SocketGenericError({
+                    reason: "Write",
+                    cause: "connection epoch has terminated",
+                  }),
+                ),
+          ),
           Effect.tapError(() =>
             Fiber.interrupt(runFiber).pipe(Effect.zipRight(Deferred.await(termination))),
           ),

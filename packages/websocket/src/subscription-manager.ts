@@ -10,18 +10,16 @@ import {
   SynchronizedRef,
 } from "effect"
 import type { Schema, Scope } from "effect"
-import type { SubscriptionDefinition } from "./index"
+import type { SubscriptionDefinition } from "./protocol"
 
-export type SubscriptionControl = unknown
-
-interface ProtocolDefinition<MessageSchema extends Schema.Schema.Any> {
+interface MessageProtocol<MessageSchema extends Schema.Schema.AnyNoContext> {
   readonly schema: MessageSchema
   readonly match: (parsed: unknown, identity: string) => boolean
 }
 
 interface SubscriptionRecord {
   readonly protocolKey: string
-  readonly protocol: ProtocolDefinition<Schema.Schema.Any>
+  readonly protocol: MessageProtocol<Schema.Schema.AnyNoContext>
   readonly definition: SubscriptionDefinition
   readonly messages: PubSub.PubSub<unknown>
   readonly references: number
@@ -36,11 +34,17 @@ interface SubscriptionState {
   // 两个索引必须在同一次 SynchronizedRef 更新中变化，避免查找状态与路由顺序分叉。
   readonly records: HashMap.HashMap<SubscriptionInstanceKey, SubscriptionRecord>
   readonly orderedRecords: Chunk.Chunk<SubscriptionRecord>
+  readonly connection: Option.Option<ConnectionEpoch>
+}
+
+interface ConnectionEpoch {
+  readonly token: object
+  readonly controls: Queue.Queue<string>
 }
 
 export interface SubscriptionMatch {
   readonly protocolKey: string
-  readonly protocol: ProtocolDefinition<Schema.Schema.Any>
+  readonly protocol: MessageProtocol<Schema.Schema.AnyNoContext>
   readonly identity: string
   /** 将上层完成 Schema 解码后的消息广播给匹配的订阅实例。 */
   readonly publish: (message: unknown) => Effect.Effect<void>
@@ -48,13 +52,17 @@ export interface SubscriptionMatch {
 
 export interface SubscriptionManager {
   /** 为协议键与订阅定义取得受 Scope 管理的共享消息流。 */
-  readonly stream: <MessageSchema extends Schema.Schema.Any>(
+  readonly stream: <MessageSchema extends Schema.Schema.AnyNoContext>(
     protocolKey: string,
-    protocol: ProtocolDefinition<MessageSchema>,
+    protocol: MessageProtocol<MessageSchema>,
     definition: SubscriptionDefinition,
   ) => Stream.Stream<Schema.Schema.Type<MessageSchema>>
   /** 按稳定创建顺序查找首个粗匹配的活跃订阅实例。 */
   readonly match: (parsed: unknown) => Effect.Effect<Option.Option<SubscriptionMatch>>
+  /** 在一个 connection epoch 内发送控制消息；Scope 结束会遗弃该 epoch 的队列。 */
+  readonly runConnection: <E>(
+    send: (control: string) => Effect.Effect<void, E>,
+  ) => Effect.Effect<void, E, Scope.Scope>
 }
 
 /** 创建具有结构化相等语义的订阅实例组合键。 */
@@ -79,25 +87,37 @@ const setRecord = (
     onSome: (current) =>
       Chunk.map(state.orderedRecords, (candidate) => (candidate === current ? record : candidate)),
   }),
+  connection: state.connection,
 })
 
 /** 创建 scoped 订阅管理器，并启动唯一的 FIFO 控制消息 sender。 */
-export const makeSubscriptionManager = (
-  writeControl: (control: SubscriptionControl) => Effect.Effect<void>,
-): Effect.Effect<SubscriptionManager, never, Scope.Scope> =>
+export const makeSubscriptionManager = (): Effect.Effect<SubscriptionManager, never, Scope.Scope> =>
   Effect.gen(function* () {
-    const controlQueue = yield* Queue.unbounded<SubscriptionControl>()
     const stateRef = yield* SynchronizedRef.make<SubscriptionState>({
       records: HashMap.empty(),
       orderedRecords: Chunk.empty(),
+      connection: Option.none(),
     })
 
-    yield* Effect.addFinalizer(() => Queue.shutdown(controlQueue))
-    // 只有这个 scoped Fiber 可以调用 writeControl；Queue 同时提供全局 FIFO 顺序。
-    yield* Queue.take(controlQueue).pipe(
-      Effect.flatMap(writeControl),
-      Effect.forever,
-      Effect.forkScoped,
+    yield* Effect.addFinalizer(() =>
+      SynchronizedRef.getAndSet(stateRef, {
+        records: HashMap.empty(),
+        orderedRecords: Chunk.empty(),
+        connection: Option.none(),
+      }).pipe(
+        Effect.flatMap((state) =>
+          Effect.all(
+            [
+              ...Chunk.map(state.orderedRecords, (record) => PubSub.shutdown(record.messages)),
+              ...Option.match(state.connection, {
+                onNone: () => [],
+                onSome: (connection) => [Queue.shutdown(connection.controls)],
+              }),
+            ],
+            { discard: true },
+          ),
+        ),
+      ),
     )
 
     /** 释放一个消费者引用，并在最后一个引用退出时移除实例和入队 unsubscribe。 */
@@ -105,32 +125,34 @@ export const makeSubscriptionManager = (
       const key = makeSubscriptionInstanceKey(protocolKey, identity)
       // 状态提交与可选 unsubscribe 入队不可被中断拆开，否则可能留下幽灵实例或漏发控制消息。
       return Effect.uninterruptible(
-        SynchronizedRef.modify(stateRef, (state) => {
-          const current = HashMap.get(state.records, key)
-          if (Option.isNone(current)) return [Option.none(), state] as const
+        SynchronizedRef.updateEffect(stateRef, (state) =>
+          Effect.gen(function* () {
+            const current = HashMap.get(state.records, key)
+            if (Option.isNone(current)) return state
 
-          if (current.value.references > 1) {
-            const record = { ...current.value, references: current.value.references - 1 }
-            return [Option.none(), setRecord(state, key, current, record)] as const
-          }
+            if (current.value.references > 1) {
+              return setRecord(state, key, current, {
+                ...current.value,
+                references: current.value.references - 1,
+              })
+            }
 
-          return [
-            Option.fromNullable(current.value.definition.unsubscribe),
-            {
+            if (current.value.definition.unsubscribe && Option.isSome(state.connection)) {
+              yield* Queue.offer(
+                state.connection.value.controls,
+                current.value.definition.unsubscribe(),
+              )
+            }
+            yield* PubSub.shutdown(current.value.messages)
+            return {
               records: HashMap.remove(state.records, key),
               orderedRecords: Chunk.filter(
                 state.orderedRecords,
                 (candidate) => candidate !== current.value,
               ),
-            },
-          ] as const
-        }).pipe(
-          Effect.flatMap(
-            Option.match({
-              onNone: () => Effect.void,
-              onSome: (control) => Queue.offer(controlQueue, control).pipe(Effect.asVoid),
-            }),
-          ),
+              connection: state.connection,
+            }
+          }),
         ),
       )
     }
@@ -156,21 +178,16 @@ export const makeSubscriptionManager = (
                     }
                 const messages = yield* PubSub.subscribe(record.messages)
                 yield* Effect.addFinalizer(() => release(protocolKey, definition.identity))
-                return [
-                  {
-                    messages,
-                    subscribe: Option.isNone(current)
-                      ? Option.fromNullable(definition.subscribe)
-                      : Option.none(),
-                  },
-                  setRecord(state, key, current, record),
-                ] as const
+                if (
+                  Option.isNone(current) &&
+                  definition.subscribe &&
+                  Option.isSome(state.connection)
+                ) {
+                  yield* Queue.offer(state.connection.value.controls, definition.subscribe())
+                }
+                return [{ messages }, setRecord(state, key, current, record)] as const
               }),
             )
-
-            if (Option.isSome(acquired.subscribe)) {
-              yield* Queue.offer(controlQueue, acquired.subscribe.value)
-            }
 
             return Stream.fromQueue(acquired.messages) as Stream.Stream<never>
           }),
@@ -197,5 +214,36 @@ export const makeSubscriptionManager = (
         }),
       )
 
-    return { stream, match }
+    const runConnection: SubscriptionManager["runConnection"] = (send) =>
+      Effect.gen(function* () {
+        const controls = yield* Queue.unbounded<string>()
+        const connection: ConnectionEpoch = { token: {}, controls }
+
+        yield* SynchronizedRef.updateEffect(stateRef, (state) =>
+          Effect.gen(function* () {
+            for (const record of state.orderedRecords) {
+              if (record.definition.subscribe) {
+                yield* Queue.offer(controls, record.definition.subscribe())
+              }
+            }
+            return { ...state, connection: Option.some(connection) }
+          }),
+        )
+
+        yield* Effect.addFinalizer(() =>
+          SynchronizedRef.updateEffect(stateRef, (state) =>
+            Effect.gen(function* () {
+              yield* Queue.shutdown(controls)
+              return Option.isSome(state.connection) &&
+                state.connection.value.token === connection.token
+                ? { ...state, connection: Option.none() }
+                : state
+            }),
+          ),
+        )
+
+        return yield* Queue.take(controls).pipe(Effect.flatMap(send), Effect.forever)
+      })
+
+    return { stream, match, runConnection }
   })

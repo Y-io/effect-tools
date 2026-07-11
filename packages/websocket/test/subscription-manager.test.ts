@@ -11,16 +11,18 @@ import {
   Scope,
   Stream,
 } from "effect"
-import {
-  defineProtocol,
-  makeSubscriptionManager,
-  type SubscriptionControl,
-  type SubscriptionManager,
-} from "../src/index"
+import { defineProtocol, makeSubscriptionManager, type SubscriptionManager } from "../src/index"
 import { publishMatched } from "./support/subscription-manager"
 
 const runScoped = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(effect))
+
+const makeConnectedManager = (writeControl: (control: string) => Effect.Effect<void>) =>
+  Effect.gen(function* () {
+    const manager = yield* makeSubscriptionManager()
+    yield* manager.runConnection(writeControl).pipe(Effect.forkScoped)
+    return manager
+  })
 
 describe("订阅管理器", () => {
   /**
@@ -34,20 +36,20 @@ describe("订阅管理器", () => {
    * 6. 只通过公开 API 与控制消息观察行为，不读取内部状态。
    */
   test("同一订阅实例的多个消费者共享消息与远端订阅", async () => {
-    const controls: Array<SubscriptionControl> = []
+    const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
       match: (_parsed: unknown, identity: string) => identity === "resource-1",
       subscription: (id: string) => ({
         identity: id,
-        subscribe: { type: "subscribe", id },
-        unsubscribe: { type: "unsubscribe", id },
+        subscribe: () => `subscribe:${id}`,
+        unsubscribe: () => `unsubscribe:${id}`,
       }),
     })
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager((control) =>
+        const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
         const firstScope = yield* Scope.make()
@@ -75,7 +77,7 @@ describe("订阅管理器", () => {
           Effect.eventually,
         )
 
-        expect(controls).toEqual([{ type: "subscribe", id: "resource-1" }])
+        expect(controls).toEqual(["subscribe:resource-1"])
 
         yield* publishMatched(manager, { id: "resource-1" }, { id: "resource-1", value: 1 })
 
@@ -83,13 +85,10 @@ describe("订阅管理器", () => {
         expect(yield* Deferred.await(secondMessage)).toEqual({ id: "resource-1", value: 1 })
 
         yield* Scope.close(firstScope, Exit.void)
-        expect(controls).toEqual([{ type: "subscribe", id: "resource-1" }])
+        expect(controls).toEqual(["subscribe:resource-1"])
 
         yield* Scope.close(secondScope, Exit.void)
-        expect(controls).toEqual([
-          { type: "subscribe", id: "resource-1" },
-          { type: "unsubscribe", id: "resource-1" },
-        ])
+        expect(controls).toEqual(["subscribe:resource-1", "unsubscribe:resource-1"])
       }),
     )
   })
@@ -112,7 +111,7 @@ describe("订阅管理器", () => {
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager(() => Effect.void)
+        const manager = yield* makeConnectedManager(() => Effect.void)
         const firstScope = yield* Scope.make()
         const secondScope = yield* Scope.make()
         const firstMessage = yield* Deferred.make<unknown>()
@@ -166,7 +165,7 @@ describe("订阅管理器", () => {
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager(() => Effect.void)
+        const manager = yield* makeConnectedManager(() => Effect.void)
         const firstScope = yield* Scope.make()
         const secondScope = yield* Scope.make()
         const firstStarted = yield* Deferred.make<void>()
@@ -231,20 +230,20 @@ describe("订阅管理器", () => {
    * 5. 测试不调用手动 release，也不读取内部引用计数。
    */
   test("消费失败与 Fiber 中断都会自动释放订阅引用", async () => {
-    const controls: Array<SubscriptionControl> = []
+    const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
       match: (_parsed: unknown, identity: string) => identity === "prices",
       subscription: () => ({
         identity: "prices",
-        subscribe: "subscribe:prices",
-        unsubscribe: "unsubscribe:prices",
+        subscribe: () => "subscribe:prices",
+        unsubscribe: () => "unsubscribe:prices",
       }),
     })
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager((control) =>
+        const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
         const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
@@ -296,7 +295,7 @@ describe("订阅管理器", () => {
    * 5. 整个生命周期中 control writer 从未被调用。
    */
   test("无控制消息的被动订阅仍具有完整的 Scope 与消息流语义", async () => {
-    const controls: Array<SubscriptionControl> = []
+    const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
       match: (_parsed: unknown, identity: string) => identity === "market-price",
@@ -305,7 +304,7 @@ describe("订阅管理器", () => {
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager((control) =>
+        const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
         const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
@@ -352,20 +351,20 @@ describe("订阅管理器", () => {
    * 6. 测试不读取内部 Map、引用计数、锁或队列。
    */
   test("并发 acquire 与 release 只产生一对有序控制消息", async () => {
-    const controls: Array<SubscriptionControl> = []
+    const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
       match: (_parsed: unknown, identity: string) => identity === "prices",
       subscription: () => ({
         identity: "prices",
-        subscribe: "subscribe:prices",
-        unsubscribe: "unsubscribe:prices",
+        subscribe: () => "subscribe:prices",
+        unsubscribe: () => "unsubscribe:prices",
       }),
     })
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager((control) =>
+        const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
         const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
@@ -408,21 +407,21 @@ describe("订阅管理器", () => {
    * 5. 最终控制消息严格为 subscribe → unsubscribe。
    */
   test("本地订阅先于 subscribe 建立并接收即时响应", async () => {
-    const controls: Array<SubscriptionControl> = []
+    const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
       match: (_parsed: unknown, identity: string) => identity === "prices",
       subscription: () => ({
         identity: "prices",
-        subscribe: "subscribe:prices",
-        unsubscribe: "unsubscribe:prices",
+        subscribe: () => "subscribe:prices",
+        unsubscribe: () => "unsubscribe:prices",
       }),
     })
 
     await runScoped(
       Effect.gen(function* () {
         let manager: SubscriptionManager
-        manager = yield* makeSubscriptionManager((control) =>
+        manager = yield* makeConnectedManager((control) =>
           Effect.gen(function* () {
             controls.push(control)
             if (control === "subscribe:prices") {
@@ -482,7 +481,7 @@ describe("订阅管理器", () => {
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager(() => Effect.void)
+        const manager = yield* makeConnectedManager(() => Effect.void)
         const a1Scope = yield* Scope.make()
         const b1Scope = yield* Scope.make()
         const a2Scope = yield* Scope.make()
@@ -542,7 +541,7 @@ describe("订阅管理器", () => {
    * 6. 实例唯一键是 protocolKey 与 identity 的组合，而不是全局 identity。
    */
   test("不同协议键下相同 identity 仍是独立订阅实例", async () => {
-    const controls: Array<SubscriptionControl> = []
+    const controls: Array<string> = []
     const priceProtocol = defineProtocol({
       schema: Schema.Number,
       match: (parsed: unknown, identity: string) =>
@@ -554,8 +553,8 @@ describe("订阅管理器", () => {
         parsed.id === identity,
       subscription: () => ({
         identity: "BTC",
-        subscribe: "subscribe:price:BTC",
-        unsubscribe: "unsubscribe:price:BTC",
+        subscribe: () => "subscribe:price:BTC",
+        unsubscribe: () => "unsubscribe:price:BTC",
       }),
     })
     const statusProtocol = defineProtocol({
@@ -569,14 +568,14 @@ describe("订阅管理器", () => {
         parsed.id === identity,
       subscription: () => ({
         identity: "BTC",
-        subscribe: "subscribe:status:BTC",
-        unsubscribe: "unsubscribe:status:BTC",
+        subscribe: () => "subscribe:status:BTC",
+        unsubscribe: () => "unsubscribe:status:BTC",
       }),
     })
 
     await runScoped(
       Effect.gen(function* () {
-        const manager = yield* makeSubscriptionManager((control) =>
+        const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
         const priceScope = yield* Scope.make()
@@ -632,14 +631,14 @@ describe("订阅管理器", () => {
    * 7. 测试只观察公开 Stream、消息与 control writer，不读取内部 Queue 或 Fiber。
    */
   test("控制消息通过独立 FIFO sender 发送", async () => {
-    const controls: Array<SubscriptionControl> = []
+    const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
       match: (parsed: unknown, identity: string) => parsed === identity,
       subscription: (identity: string) => ({
         identity,
-        subscribe: `subscribe:${identity}`,
-        unsubscribe: `unsubscribe:${identity}`,
+        subscribe: () => `subscribe:${identity}`,
+        unsubscribe: () => `unsubscribe:${identity}`,
       }),
     })
 
@@ -648,7 +647,7 @@ describe("订阅管理器", () => {
         Effect.gen(function* () {
           const firstWriteStarted = yield* Deferred.make<void>()
           const resumeFirstWrite = yield* Deferred.make<void>()
-          const manager = yield* makeSubscriptionManager((control) =>
+          const manager = yield* makeConnectedManager((control) =>
             Effect.gen(function* () {
               controls.push(control)
               if (control === "subscribe:A") {

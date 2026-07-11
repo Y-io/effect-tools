@@ -13,9 +13,11 @@ export interface ControllableSocket {
   readonly failOpen: (error: Socket.SocketError) => Effect.Effect<void>
   readonly emitFrame: (frame: string | Uint8Array) => Effect.Effect<void>
   readonly takeSent: Effect.Effect<string | Uint8Array>
+  readonly pollSent: Effect.Effect<Option.Option<string | Uint8Array>>
   readonly failNextSend: (error: Socket.SocketError) => Effect.Effect<void>
   readonly disconnect: (code?: number, reason?: string) => Effect.Effect<void>
   readonly runReleased: Effect.Effect<void>
+  readonly runCount: Effect.Effect<number>
   readonly closeCount: Effect.Effect<number>
 }
 
@@ -27,6 +29,8 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
     const sent = yield* Queue.unbounded<string | Uint8Array>()
     const nextSendFailure = yield* Ref.make<Option.Option<Socket.SocketError>>(Option.none())
     const released = yield* Deferred.make<void>()
+    const runs = yield* Ref.make(0)
+    const running = yield* Ref.make(false)
     const closes = yield* Ref.make(0)
     yield* Effect.addFinalizer(() =>
       Effect.all([Queue.shutdown(events), Queue.shutdown(sent)], { discard: true }),
@@ -52,10 +56,14 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
           }),
         ),
       )
-      return Deferred.await(opened).pipe(
+      return Ref.set(running, true).pipe(
+        Effect.zipRight(Ref.update(runs, (count) => count + 1)),
+        Effect.zipRight(Deferred.await(opened)),
         Effect.zipRight(options?.onOpen ?? Effect.void),
         Effect.zipRight(loop),
-        Effect.ensuring(Deferred.succeed(released, undefined)),
+        Effect.ensuring(
+          Ref.set(running, false).pipe(Effect.zipRight(Deferred.succeed(released, undefined))),
+        ),
       )
     }
     const run: Socket.Socket["run"] = (handler, options) =>
@@ -71,7 +79,15 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
             onNone: () =>
               control instanceof Socket.CloseEvent
                 ? Ref.update(closes, (count) => count + 1).pipe(
-                    Effect.zipRight(Queue.offer(events, { _tag: "End", exit: Exit.void })),
+                    Effect.zipRight(
+                      Ref.get(running).pipe(
+                        Effect.flatMap((isRunning) =>
+                          isRunning
+                            ? Queue.offer(events, { _tag: "End", exit: Exit.void })
+                            : Effect.void,
+                        ),
+                      ),
+                    ),
                     Effect.asVoid,
                   )
                 : Queue.offer(sent, control).pipe(Effect.asVoid),
@@ -92,6 +108,7 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
       failOpen: (error) => Deferred.fail(opened, error).pipe(Effect.asVoid),
       emitFrame: (frame) => Queue.offer(events, { _tag: "Frame", frame }).pipe(Effect.asVoid),
       takeSent: Queue.take(sent),
+      pollSent: Queue.poll(sent),
       failNextSend: (error) => Ref.set(nextSendFailure, Option.some(error)),
       disconnect: (code = 1000, reason) =>
         Queue.offer(events, {
@@ -101,6 +118,7 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
           ),
         }).pipe(Effect.asVoid),
       runReleased: Deferred.await(released),
+      runCount: Ref.get(runs),
       closeCount: Ref.get(closes),
     }
   })
