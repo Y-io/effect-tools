@@ -1,9 +1,18 @@
+import type { Schema } from "effect"
+
+export interface SubscriptionDefinition {
+  readonly identity: string
+  readonly subscribe?: unknown
+  readonly unsubscribe?: unknown
+}
+
 export const defineProtocol = <
-  const Definition extends {
-    readonly schema: unknown
-    readonly match: unknown
-    readonly subscription: unknown
-  },
->(
-  definition: Definition,
-): Definition => definition
+  const MessageSchema extends Schema.Schema.Any,
+  const Subscription extends (
+    ...args: never[]
+  ) => SubscriptionDefinition,
+>(definition: {
+  readonly schema: MessageSchema
+  readonly match: (parsed: unknown, identity: string) => boolean
+  readonly subscription: Subscription
+}) => definition
