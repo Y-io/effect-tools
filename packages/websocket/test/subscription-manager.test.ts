@@ -273,4 +273,51 @@ describe("订阅管理器", () => {
       }),
     )
   })
+
+  test("并发 acquire 与 release 只产生一对有序控制消息", async () => {
+    const controls: Array<SubscriptionControl> = []
+    const protocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity === "prices",
+      subscription: () => ({
+        identity: "prices",
+        subscribe: "subscribe:prices",
+        unsubscribe: "unsubscribe:prices",
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const manager = yield* makeSubscriptionManager((control) =>
+          Effect.sync(() => controls.push(control)),
+        )
+        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+        const scopes = yield* Effect.forEach(Array.from({ length: 20 }), () => Scope.make(), {
+          concurrency: "unbounded",
+        })
+        const consumers = yield* Effect.forEach(
+          scopes,
+          (scope) => Stream.runDrain(stream).pipe(Effect.forkIn(scope)),
+          { concurrency: "unbounded" },
+        )
+        yield* Effect.forEach(consumers, Fiber.status, { concurrency: "unbounded" }).pipe(
+          Effect.filterOrFail((statuses) => statuses.every(FiberStatus.isSuspended)),
+          Effect.eventually,
+        )
+
+        expect(controls).toEqual(["subscribe:prices"])
+
+        yield* Effect.forEach(consumers, Fiber.interrupt, {
+          concurrency: "unbounded",
+          discard: true,
+        })
+        expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
+
+        yield* Effect.forEach(scopes, (scope) => Scope.close(scope, Exit.void), {
+          concurrency: "unbounded",
+          discard: true,
+        })
+      }),
+    )
+  })
 })
