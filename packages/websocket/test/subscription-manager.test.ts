@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Deferred, Effect, Exit, Fiber, FiberStatus, Option, Schema, Scope, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, FiberStatus, Option, Ref, Schema, Scope, Stream } from "effect"
 import {
   defineProtocol,
   makeSubscriptionManager,
@@ -103,6 +103,70 @@ describe("订阅管理器", () => {
         const resource2 = { id: "resource-2", value: 2 }
         yield* manager.publish("resourceUpdated", "resource-2", resource2)
         expect(yield* Deferred.await(secondMessage)).toEqual(resource2)
+
+        yield* Scope.close(firstScope, Exit.void)
+        yield* Scope.close(secondScope, Exit.void)
+      }),
+    )
+  })
+
+  test("慢消费者只保留最新待处理值且新消费者不接收历史值", async () => {
+    const protocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity === "prices",
+      subscription: () => ({ identity: "prices" }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const manager = yield* makeSubscriptionManager(() => Effect.void)
+        const firstScope = yield* Scope.make()
+        const secondScope = yield* Scope.make()
+        const firstStarted = yield* Deferred.make<void>()
+        const resumeFirst = yield* Deferred.make<void>()
+        const firstValues = yield* Ref.make<ReadonlyArray<number>>([])
+        const firstReceivedFour = yield* Deferred.make<void>()
+        const secondValue = yield* Deferred.make<number>()
+        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+
+        const first = yield* Stream.runForEach(stream, (value) =>
+          Effect.gen(function* () {
+            yield* Ref.update(firstValues, (values) => [...values, value])
+            if (value === 1) {
+              yield* Deferred.succeed(firstStarted, undefined)
+              yield* Deferred.await(resumeFirst)
+            }
+            if (value === 4) yield* Deferred.succeed(firstReceivedFour, undefined)
+          }),
+        ).pipe(Effect.forkIn(firstScope))
+        yield* Fiber.status(first).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+
+        yield* manager.publish("priceUpdated", "prices", 1)
+        yield* Deferred.await(firstStarted)
+        yield* manager.publish("priceUpdated", "prices", 2)
+        yield* manager.publish("priceUpdated", "prices", 3)
+        yield* Deferred.succeed(resumeFirst, undefined)
+        const values = yield* Ref.get(firstValues).pipe(
+          Effect.filterOrFail((current) => current.length === 2),
+          Effect.eventually,
+        )
+        expect(values).toEqual([1, 3])
+
+        const second = yield* Stream.runForEach(stream, (value) => Deferred.succeed(secondValue, value)).pipe(
+          Effect.forkIn(secondScope),
+        )
+        yield* Fiber.status(second).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+        expect(Option.isNone(yield* Deferred.poll(secondValue))).toBe(true)
+
+        yield* manager.publish("priceUpdated", "prices", 4)
+        yield* Deferred.await(firstReceivedFour)
+        expect(yield* Deferred.await(secondValue)).toBe(4)
 
         yield* Scope.close(firstScope, Exit.void)
         yield* Scope.close(secondScope, Exit.void)
