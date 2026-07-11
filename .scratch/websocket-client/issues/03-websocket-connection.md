@@ -23,7 +23,7 @@ Status: needs-info
 - [x] 可以通过同一公开接口提供可控 fake connection，支持发出 frame、断线和发送失败。
 - [x] 连接边界不包含 parser、Schema、订阅实例、引用计数或重连策略。
 - [x] 测试通过公开连接接口验证收发、失败与 Scope 清理，不依赖真实网络。
-- [ ] 类型检查、测试、lint 和格式检查通过。
+- [x] 类型检查、测试、lint 和格式检查通过。
 
 ## Blocked by
 
