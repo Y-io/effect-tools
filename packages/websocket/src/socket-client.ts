@@ -22,20 +22,20 @@ export type SocketClient<Catalog extends Readonly<Record<string, AnyProtocolDefi
 
 export interface SocketClientOptions<
   Catalog extends Readonly<Record<string, AnyProtocolDefinition>>,
-  RawFrame extends string | Uint8Array,
 > {
   readonly catalog: Catalog
   readonly socket: Socket.Socket
-  readonly parser: (frame: RawFrame) => unknown
+  readonly parser: typeof JSON.parse | ((frame: string | Uint8Array) => unknown)
 }
 
 const reconnectDelay = "3 seconds"
 
+type FrameParser = (frame: string | Uint8Array) => unknown
+
 export const makeSocketClient = <
   const Catalog extends Readonly<Record<string, AnyProtocolDefinition>>,
-  RawFrame extends string | Uint8Array,
 >(
-  options: SocketClientOptions<Catalog, RawFrame>,
+  options: SocketClientOptions<Catalog>,
 ): Effect.Effect<SocketClient<Catalog>, never, Scope.Scope> =>
   Effect.gen(function* () {
     const manager = yield* makeSubscriptionManager()
@@ -43,7 +43,12 @@ export const makeSocketClient = <
     const handleFrame = (frame: string | Uint8Array) =>
       Effect.sync(() => {
         try {
-          return Option.some(options.parser(frame as RawFrame))
+          if (typeof frame === "string") {
+            return Option.some(options.parser(frame))
+          }
+          return options.parser === JSON.parse
+            ? Option.none()
+            : Option.some((options.parser as FrameParser)(frame))
         } catch {
           return Option.none()
         }

@@ -38,7 +38,6 @@ interface SubscriptionState {
 }
 
 interface ConnectionEpoch {
-  readonly token: object
   readonly controls: Queue.Queue<string>
 }
 
@@ -90,7 +89,7 @@ const setRecord = (
   connection: state.connection,
 })
 
-/** 创建 scoped 订阅管理器，并启动唯一的 FIFO 控制消息 sender。 */
+/** 创建 scoped 订阅管理器；每个连接通过 runConnection 取得独立的 FIFO sender。 */
 export const makeSubscriptionManager = (): Effect.Effect<SubscriptionManager, never, Scope.Scope> =>
   Effect.gen(function* () {
     const stateRef = yield* SynchronizedRef.make<SubscriptionState>({
@@ -217,7 +216,7 @@ export const makeSubscriptionManager = (): Effect.Effect<SubscriptionManager, ne
     const runConnection: SubscriptionManager["runConnection"] = (send) =>
       Effect.gen(function* () {
         const controls = yield* Queue.unbounded<string>()
-        const connection: ConnectionEpoch = { token: {}, controls }
+        const connection: ConnectionEpoch = { controls }
 
         yield* SynchronizedRef.updateEffect(stateRef, (state) =>
           Effect.gen(function* () {
@@ -234,8 +233,7 @@ export const makeSubscriptionManager = (): Effect.Effect<SubscriptionManager, ne
           SynchronizedRef.updateEffect(stateRef, (state) =>
             Effect.gen(function* () {
               yield* Queue.shutdown(controls)
-              return Option.isSome(state.connection) &&
-                state.connection.value.token === connection.token
+              return Option.isSome(state.connection) && state.connection.value === connection
                 ? { ...state, connection: Option.none() }
                 : state
             }),

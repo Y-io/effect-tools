@@ -225,4 +225,95 @@ describe("Socket Client", () => {
       ).pipe(Effect.provide(TestContext.TestContext)),
     )
   })
+
+  test("相同 identity 的消费者共享远端订阅，不同 identity 相互隔离", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+          const firstScope = yield* Scope.make()
+          const secondScope = yield* Scope.make()
+          const ethScope = yield* Scope.make()
+          const first = yield* Deferred.make<number>()
+          const second = yield* Deferred.make<number>()
+          const eth = yield* Deferred.make<number>()
+
+          yield* Stream.runForEach(client.prices.stream("BTC"), (message) =>
+            Deferred.succeed(first, message.value),
+          ).pipe(Effect.forkIn(firstScope))
+          yield* Stream.runForEach(client.prices.stream("BTC"), (message) =>
+            Deferred.succeed(second, message.value),
+          ).pipe(Effect.forkIn(secondScope))
+          yield* Stream.runForEach(client.prices.stream("ETH"), (message) =>
+            Deferred.succeed(eth, message.value),
+          ).pipe(Effect.forkIn(ethScope))
+
+          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          expect(yield* control.takeSent).toBe("subscribe:ETH")
+          yield* control.emitFrame(JSON.stringify({ type: "price", symbol: "BTC", value: 101 }))
+          expect(yield* Deferred.await(first)).toBe(101)
+          expect(yield* Deferred.await(second)).toBe(101)
+          expect(Option.isNone(yield* Deferred.poll(eth))).toBe(true)
+
+          yield* Scope.close(firstScope, Exit.void)
+          expect(Option.isNone(yield* control.pollSent)).toBe(true)
+          yield* Scope.close(secondScope, Exit.void)
+          expect(yield* control.takeSent).toBe("unsubscribe:BTC")
+          yield* Scope.close(ethScope, Exit.void)
+          expect(yield* control.takeSent).toBe("unsubscribe:ETH")
+        }),
+      ),
+    )
+  })
+
+  test("重叠粗匹配按订阅实例创建顺序只发布给首个实例", async () => {
+    const overlappingCatalog = defineProtocolCatalog({
+      events: defineProtocol({
+        schema: Schema.Struct({
+          identities: Schema.Array(Schema.String),
+          value: Schema.Number,
+        }),
+        match: (parsed: unknown, identity: string) =>
+          typeof parsed === "object" &&
+          parsed !== null &&
+          "identities" in parsed &&
+          Array.isArray(parsed.identities) &&
+          parsed.identities.includes(identity),
+        subscription: (identity: string) => ({ identity }),
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog: overlappingCatalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+          const first = yield* Deferred.make<number>()
+          const second = yield* Deferred.make<number>()
+          yield* Stream.runForEach(client.events.stream("first"), (message) =>
+            Deferred.succeed(first, message.value),
+          ).pipe(Effect.forkScoped)
+          yield* Stream.runForEach(client.events.stream("second"), (message) =>
+            Deferred.succeed(second, message.value),
+          ).pipe(Effect.forkScoped)
+          yield* Effect.yieldNow()
+
+          yield* control.emitFrame(JSON.stringify({ identities: ["first", "second"], value: 1 }))
+          expect(yield* Deferred.await(first)).toBe(1)
+          expect(Option.isNone(yield* Deferred.poll(second))).toBe(true)
+        }),
+      ),
+    )
+  })
 })
