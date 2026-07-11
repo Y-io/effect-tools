@@ -83,6 +83,7 @@ export const makeWebSocketConnection = <
         Effect.asVoid,
       ),
     )
+    yield* Effect.addFinalizer(() => close)
 
     return Object.freeze({
       frames: options.frames,

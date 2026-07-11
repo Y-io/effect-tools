@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Deferred, Effect, Exit, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, Scope, Stream } from "effect"
 import { makeWebSocketConnection } from "../src/index"
 
 describe("WebSocket 连接", () => {
@@ -95,5 +95,53 @@ describe("WebSocket 连接", () => {
     )
 
     expect(terminations).toEqual([remoteClose, { _tag: "LocalClose" }, failure])
+  })
+
+  test("Scope 结束会关闭连接并释放接收与发送资源", async () => {
+    const closed: Array<string> = []
+
+    const released = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scope = yield* Scope.make()
+        const receiveStarted = yield* Deferred.make<void>()
+        const receiveReleased = yield* Deferred.make<void>()
+        const sendStarted = yield* Deferred.make<void>()
+        const sendReleased = yield* Deferred.make<void>()
+        const frames = Stream.fromEffect(Deferred.succeed(receiveStarted, undefined)).pipe(
+          Stream.concat(Stream.never),
+          Stream.ensuring(Deferred.succeed(receiveReleased, undefined)),
+        )
+        const connection = yield* makeWebSocketConnection({
+          frames,
+          write: () =>
+            Deferred.succeed(sendStarted, undefined).pipe(
+              Effect.zipRight(Effect.never),
+              Effect.ensuring(Deferred.succeed(sendReleased, undefined)),
+            ),
+          awaitTermination: Effect.never,
+          close: Effect.sync(() => closed.push("closed")),
+        }).pipe(Effect.provideService(Scope.Scope, scope))
+
+        const receiver = yield* Stream.runDrain(connection.frames).pipe(Effect.forkIn(scope))
+        const sender = yield* connection.send("subscribe").pipe(Effect.forkIn(scope))
+        yield* Deferred.await(receiveStarted)
+        yield* Deferred.await(sendStarted)
+
+        yield* Scope.close(scope, Exit.void)
+
+        return {
+          receiveReleased: yield* Deferred.isDone(receiveReleased),
+          sendReleased: yield* Deferred.isDone(sendReleased),
+          receiver: yield* Fiber.await(receiver),
+          sender: yield* Fiber.await(sender),
+        }
+      }),
+    )
+
+    expect(closed).toEqual(["closed"])
+    expect(released.receiveReleased).toBe(true)
+    expect(released.sendReleased).toBe(true)
+    expect(Exit.isInterrupted(released.receiver)).toBe(true)
+    expect(Exit.isInterrupted(released.sender)).toBe(true)
   })
 })
