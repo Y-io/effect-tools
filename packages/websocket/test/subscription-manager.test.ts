@@ -1,12 +1,23 @@
 import { describe, expect, test } from "bun:test"
-import { Deferred, Effect, Exit, Fiber, FiberStatus, Option, Ref, Schema, Scope, Stream } from "effect"
 import {
-  defineProtocol,
-  makeSubscriptionManager,
-  type SubscriptionControl,
-} from "../src/index"
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  FiberStatus,
+  Option,
+  Ref,
+  Schema,
+  Scope,
+  Stream,
+} from "effect"
+import { defineProtocol, makeSubscriptionManager, type SubscriptionControl } from "../src/index"
 
 describe("订阅管理器", () => {
+  /**
+   * 测试将验证：相同协议键与 identity 的消费者共享一次远端订阅和同一实时消息，
+   * 且只有最后一个消费者退出时才发送 unsubscribe。
+   */
   test("同一订阅实例的多个消费者共享消息与远端订阅", async () => {
     const controls: Array<SubscriptionControl> = []
     const protocol = defineProtocol({
@@ -28,18 +39,22 @@ describe("订阅管理器", () => {
         const secondScope = yield* Scope.make()
         const firstMessage = yield* Deferred.make<unknown>()
         const secondMessage = yield* Deferred.make<unknown>()
-        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription("resource-1"))
-
-        const first = yield* Stream.runForEach(stream, (message) => Deferred.succeed(firstMessage, message)).pipe(
-          Effect.forkIn(firstScope),
+        const stream = manager.stream(
+          "resourceUpdated",
+          protocol,
+          protocol.subscription("resource-1"),
         )
+
+        const first = yield* Stream.runForEach(stream, (message) =>
+          Deferred.succeed(firstMessage, message),
+        ).pipe(Effect.forkIn(firstScope))
         yield* Fiber.status(first).pipe(
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
         )
-        const second = yield* Stream.runForEach(stream, (message) => Deferred.succeed(secondMessage, message)).pipe(
-          Effect.forkIn(secondScope),
-        )
+        const second = yield* Stream.runForEach(stream, (message) =>
+          Deferred.succeed(secondMessage, message),
+        ).pipe(Effect.forkIn(secondScope))
         yield* Fiber.status(second).pipe(
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
@@ -64,6 +79,9 @@ describe("订阅管理器", () => {
     )
   })
 
+  /**
+   * 测试将验证：同一协议下不同 identity 的消费者只接收发给自身订阅实例的消息。
+   */
   test("同一协议下不同 identity 的消息相互隔离", async () => {
     const protocol = defineProtocol({
       schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
@@ -110,6 +128,9 @@ describe("订阅管理器", () => {
     )
   })
 
+  /**
+   * 测试将验证：慢消费者只保留最新待处理值，且后加入的消费者不接收历史值。
+   */
   test("慢消费者只保留最新待处理值且新消费者不接收历史值", async () => {
     const protocol = defineProtocol({
       schema: Schema.Number,
@@ -155,9 +176,9 @@ describe("订阅管理器", () => {
         )
         expect(values).toEqual([1, 3])
 
-        const second = yield* Stream.runForEach(stream, (value) => Deferred.succeed(secondValue, value)).pipe(
-          Effect.forkIn(secondScope),
-        )
+        const second = yield* Stream.runForEach(stream, (value) =>
+          Deferred.succeed(secondValue, value),
+        ).pipe(Effect.forkIn(secondScope))
         yield* Fiber.status(second).pipe(
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
@@ -174,6 +195,10 @@ describe("订阅管理器", () => {
     )
   })
 
+  /**
+   * 测试将验证：消费失败与 Fiber 中断都会通过 Scope 自动释放订阅引用，
+   * 并为每轮生命周期产生一对有序的 subscribe 与 unsubscribe。
+   */
   test("消费失败与 Fiber 中断都会自动释放订阅引用", async () => {
     const controls: Array<SubscriptionControl> = []
     const protocol = defineProtocol({
@@ -209,7 +234,9 @@ describe("订阅管理器", () => {
         expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
 
         const interruptionScope = yield* Scope.make()
-        const interruptedConsumer = yield* Stream.runDrain(stream).pipe(Effect.forkIn(interruptionScope))
+        const interruptedConsumer = yield* Stream.runDrain(stream).pipe(
+          Effect.forkIn(interruptionScope),
+        )
         yield* Fiber.status(interruptedConsumer).pipe(
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
@@ -228,6 +255,9 @@ describe("订阅管理器", () => {
     )
   })
 
+  /**
+   * 测试将验证：被动订阅无需控制消息也能接收实时值、随 Scope 释放并重新建立。
+   */
   test("无控制消息的被动订阅仍具有完整的 Scope 与消息流语义", async () => {
     const controls: Array<SubscriptionControl> = []
     const protocol = defineProtocol({
@@ -274,6 +304,10 @@ describe("订阅管理器", () => {
     )
   })
 
+  /**
+   * 测试将验证：相同订阅实例的并发 acquire 与 release 被串行化，
+   * 最终只产生一对有序的 subscribe 与 unsubscribe。
+   */
   test("并发 acquire 与 release 只产生一对有序控制消息", async () => {
     const controls: Array<SubscriptionControl> = []
     const protocol = defineProtocol({
