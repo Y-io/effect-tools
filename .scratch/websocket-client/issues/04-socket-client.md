@@ -21,7 +21,7 @@ Status: needs-info
 - [ ] 入站消息按订阅实例稳定创建顺序执行 `match(parsed, identity)`，首个匹配实例获胜。
 - [ ] Schema 解码完整 parsed 值；decode 失败、无匹配消息与 parser 失败均不终止连接或现有 Stream。
 - [ ] 本地订阅实例和消费者接入先于 subscribe 发送，使立即响应对首个消费者可见。
-- [ ] WebSocket 断开会废弃当前 connection epoch 的待发送控制消息，但保留当前活跃期望订阅。
+- [ ] WebSocket 断开会清除当前 connection epoch 的 sender，但保留当前活跃期望订阅；后续事件继续更新本地列表而不发送控制消息。
 - [ ] 新连接只从当时仍活跃的订阅实例重建 subscribe，不回放旧控制命令。
 - [ ] 控制消息发送失败立即使连接失效，并进入与断线相同的重连路径。
 - [ ] Socket Client Scope 存活期间每三秒无限重连；Scope 结束停止重连并释放全部组合资源。

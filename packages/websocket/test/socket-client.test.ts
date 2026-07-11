@@ -398,14 +398,19 @@ describe("Socket Client", () => {
           ).pipe(Effect.forkScoped)
           expect(Option.isNone(yield* control.pollSent)).toBe(true)
 
-          yield* control.emitFrame("0")
-          yield* Deferred.await(firstReady)
+          yield* control
+            .emitFrame("0")
+            .pipe(
+              Effect.zipRight(Deferred.poll(firstReady)),
+              Effect.filterOrFail(Option.isSome),
+              Effect.eventually,
+            )
           yield* control.emitFrame("1")
           yield* Deferred.await(firstStarted)
           yield* control.emitFrame("2")
           yield* control.emitFrame("3")
-          yield* Effect.sync(() => matched.length).pipe(
-            Effect.filterOrFail((length) => length === 4),
+          yield* Effect.sync(() => matched.includes(2) && matched.includes(3)).pipe(
+            Effect.filterOrFail((received) => received),
             Effect.eventually,
           )
           yield* Deferred.succeed(resumeFirst, undefined)

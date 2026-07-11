@@ -4,7 +4,7 @@ Status: ready-for-agent
 
 ## Problem Statement
 
-业务需要在 Effect v3 中复用一套 WebSocket 客户端架构：以声明式协议配置描述消息匹配、Schema 解码以及订阅信息生成；多个调用方可以按业务参数取得相互隔离、可重复消费的最新值 Stream；客户端统一维护连接、订阅引用计数、发送顺序和断线重订阅。
+业务需要在 Effect v3 中复用一套 WebSocket 客户端架构：以声明式协议配置描述消息匹配、Schema 解码以及订阅信息生成；多个调用方可以按业务参数取得相互隔离、可重复消费的最新值 Stream；客户端统一维护连接、订阅消费者、事件顺序和断线重订阅。
 
 如果每个业务自行管理 WebSocket、订阅列表、消息分发和重连，容易出现重复订阅、取消订阅过早、首条消息丢失、发送乱序、断线后状态与远端不一致，以及多个消费者相互抢消息等问题。
 
@@ -18,7 +18,7 @@ Status: ready-for-agent
 - 必需的 Effect Schema；它解码解析后的完整入站消息。
 - 必需的订阅工厂；它根据 `stream(...args)` 的业务参数生成唯一字符串 `identity`，并可选生成 subscribe 与 unsubscribe 控制消息。
 
-业务调用 `client.<protocol>.stream(...args)` 取得只包含 Schema 解码结果的 Stream。Socket Client 在内部按协议配置与 `identity` 维护订阅实例、引用计数和最新值广播。调用方无需接触 identity、订阅控制消息、连接状态或重连过程。
+业务调用 `client.<protocol>.stream(...args)` 取得只包含 Schema 解码结果的 Stream。Socket Client 在内部按全局唯一 `identity` 维护订阅实例及其消费者数据 Queue。调用方无需接触 identity、订阅事件、连接状态或重连过程。
 
 ## User Stories
 
@@ -43,13 +43,13 @@ Status: ready-for-agent
 19. As a Stream consumer, I want the remote subscription to be cancelled after the final local consumer exits, so that unused server resources are released.
 20. As a Stream consumer, I want fiber interruption and Scope finalization to release subscription references automatically, so that failed or cancelled consumers do not leak subscriptions.
 21. As a WebSocket business developer, I want the local subscription model established before subscribe is sent, so that an immediate server response cannot be lost during setup.
-22. As a WebSocket business developer, I want all subscription lifecycle mutations serialized, so that concurrent acquire and release operations cannot corrupt reference counts or send duplicate controls.
-23. As a WebSocket business developer, I want all subscribe and unsubscribe messages sent through one FIFO queue, so that WebSocket writes preserve lifecycle order.
+22. As a WebSocket business developer, I want all subscription lifecycle mutations serialized, so that concurrent acquire and release operations cannot corrupt consumer membership or send duplicate controls.
+23. As a WebSocket business developer, I want all Acquire and Release events processed through one FIFO queue, so that subscribe and unsubscribe writes preserve lifecycle order.
 24. As a WebSocket business developer, I want the subscription manager to be the only writer of subscription control messages, so that no caller can bypass ordering guarantees.
 25. As a WebSocket business developer, I want malformed raw frames discarded without terminating the connection, so that one bad message does not disrupt valid traffic.
 26. As a WebSocket business developer, I want messages that match no active subscription discarded, so that the client processes only configured and currently requested data.
 27. As a WebSocket business developer, I want Schema decode failures discarded without terminating Streams or the connection, so that invalid business data is isolated to one message.
-28. As a WebSocket business developer, I want connection loss to clear the obsolete outbound queue, so that stale control commands are not replayed against a new connection.
+28. As a WebSocket business developer, I want connection loss to clear the obsolete sender, so that stale control commands are not replayed against a new connection.
 29. As a WebSocket business developer, I want active local subscription records retained across connection loss, so that desired subscriptions survive reconnects.
 30. As a WebSocket business developer, I want reconnect to rebuild remote subscriptions from current local records, so that transient acquire and release commands from the disconnected period are collapsed into current state.
 31. As a WebSocket business developer, I want reconnect attempts to continue every three seconds while the Socket Client Scope remains alive, so that temporary outages recover without caller intervention.
@@ -62,23 +62,22 @@ Status: ready-for-agent
 - A protocol definition contains a required `match(parsed, identity): boolean`, a required Schema for the complete parsed inbound value, and a required subscription factory.
 - The subscription factory accepts the same business arguments exposed by the generated `stream(...args)` API.
 - The subscription factory returns a string identity plus optional subscribe and unsubscribe control messages. Identity is an internal routing and lifecycle key and is never required from Stream consumers directly.
-- The combination of protocol key and identity uniquely identifies a subscription instance. Repeated consumers reuse the existing instance instead of copying the protocol definition or Schema.
-- A subscription record stores the identity, a reference to its protocol definition, its current reference count, and its latest-value broadcast source.
+- Identity globally uniquely identifies a subscription instance. Repeated consumers with the same identity join the existing instance, whose record retains the protocol definition and subscription definition created by the first consumer.
+- A subscription record stores the identity, its protocol and subscription definitions, and the current consumer collection. Each consumer owns an independent latest-value queue.
 - The required frame parser is a synchronous function from the raw WebSocket frame to `unknown`. The Socket Client catches parser exceptions and discards only the current frame.
 - Inbound routing iterates active subscription records in stable creation order. Each record invokes its referenced protocol match function with the parsed value and that record's identity. The first `true` result wins.
 - After a subscription record matches, its Schema decodes the complete parsed value. A decode failure discards the current message. A successful result is broadcast only to that subscription instance.
-- The shared message source uses Effect `PubSub.sliding(1)` with no replay. Active consumers receive live broadcasts; slow consumers retain only the newest pending value; later consumers do not receive earlier values.
-- Subscription acquisition is tied to Stream consumption and Effect Scope. The local subscription record and consumer broadcast subscription are established before any remote subscribe control message is sent.
-- Reference-count transitions and subscription-control sends are serialized by the subscription manager.
-- A transition from zero to one active consumer enqueues the optional subscribe message. Additional consumers only increment the reference count.
-- A transition from one to zero active consumers enqueues the optional unsubscribe message and removes the inactive subscription from desired local state in lifecycle order.
-- The subscription manager is the sole writer of subscribe and unsubscribe control messages. It owns one FIFO outbound queue and one ordered sending process.
+- Each Stream consumer owns an Effect `Queue.sliding(1)` with no replay. Matching decoded messages are offered to every queue belonging to the matched subscription; slow consumers retain only their own newest pending value.
+- Subscription acquisition is tied to Stream consumption and Effect Scope. Consumption immediately creates the consumer queue, enqueues an Acquire event carrying identity and configuration, and returns the data Stream without waiting for the event to be processed or for a remote subscribe to complete.
+- Acquire, Release, Connected, and Disconnected events share one FIFO subscription event queue. Its single consumer is the only writer of the subscription list and the only caller of subscribe/unsubscribe WebSocket sends.
+- The first Acquire for an identity adds the subscription and consumer before optionally sending subscribe. Additional Acquire events append consumers without another subscribe.
+- Release is enqueued by the consumer Scope finalizer. The final Release removes the subscription before optionally sending unsubscribe; callers do not wait for Release processing.
 - The first version has no general-purpose business-message send API and no heartbeat facility.
-- Connection loss clears the outbound control queue but preserves subscription records whose reference count remains above zero.
-- After connection establishment, the subscription manager enqueues subscribe messages for all currently active subscription records in stable record order.
+- Connection loss clears the active sender but preserves subscription records that still have consumers. Events processed while disconnected update only the local subscription list.
+- When a Connected event is processed, the subscription manager sends subscribe for all currently active subscription records in stable record order.
 - A control-message send failure immediately invalidates and closes the current connection, clears its queue, and starts reconnect behavior.
 - Reconnect retries indefinitely at a fixed three-second interval while the Socket Client Scope remains alive. The first version does not expose a configurable Effect Schedule.
-- Socket Client Scope finalization stops reconnect attempts, closes the current connection, shuts down queues and broadcasts, and clears subscription state.
+- Socket Client Scope finalization stops reconnect attempts, closes the current connection, shuts down the subscription event queue and consumer queues, and clears subscription state.
 - The Socket Client owns the lifecycles of the protocol catalog, subscription manager, and WebSocket connection resources that it composes.
 
 ## Testing Decisions
@@ -98,14 +97,14 @@ Status: ready-for-agent
 - Verify reconnect after three seconds recreates only currently active subscriptions, not stale queued transitions.
 - Verify control-message send failure closes the connection and starts the same reconnect path.
 - Verify Scope finalization stops future reconnect attempts and releases all Stream and connection resources.
-- There is no existing WebSocket package test prior art in the repository; tests should follow Effect v3 Scope, PubSub, Stream, and TestClock patterns from the vendored read-only upstream tests where applicable.
+- There is no existing WebSocket package test prior art in the repository; tests should follow Effect v3 Scope, Queue, Stream, and TestClock patterns from the vendored read-only upstream tests where applicable.
 
 ## Out of Scope
 
 - Automatic heartbeat or heartbeat timeout detection.
 - General-purpose business-message sending outside subscribe and unsubscribe controls.
 - Historical replay, event-log semantics, or guaranteed processing of every intermediate message.
-- Configurable PubSub capacity or alternative dropping/backpressure strategies.
+- Configurable consumer queue capacity or alternative dropping/backpressure strategies.
 - Configurable reconnect schedules, retry limits, jitter, or exponential backoff.
 - Durable subscription persistence across process restarts.
 - Delivery acknowledgements, exactly-once delivery, idempotency keys, or server-side subscription confirmation.
@@ -115,7 +114,7 @@ Status: ready-for-agent
 
 ## Further Notes
 
-- The design deliberately treats local subscription state as desired state and the outbound queue as connection-epoch state. Reconnect rebuilds the latter from the former instead of replaying stale commands.
+- The design deliberately treats the subscription list as desired state and the active sender as connection-epoch state. Reconnect sends subscribe for the current list instead of replaying stale lifecycle operations.
 - Identity equality is exact string equality. Each subscription factory and its protocol matcher must agree on the identity representation.
 - Protocol match functions are intentionally coarse. Schema remains the authority for validating and transforming inbound business data.
 - The initial design favors a small, fixed behavior surface. Retry schedules, heartbeat behavior, general sending, and delivery guarantees can be added only when a concrete business requirement appears.

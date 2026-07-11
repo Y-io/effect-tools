@@ -2,7 +2,7 @@ import type { Schema } from "effect"
 
 /** subscription factory 为一个订阅实例生成的稳定标识与可选控制消息。 */
 export interface SubscriptionDefinition {
-  /** 协议定义内唯一的路由与生命周期标识。 */
+  /** 跨整个协议目录全局唯一的路由与生命周期标识。 */
   readonly identity: string
   /** 连接可用且需要建立远端订阅时构造 subscribe 字符串。 */
   readonly subscribe?: () => string

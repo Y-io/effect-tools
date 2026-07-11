@@ -29,7 +29,7 @@ describe("订阅管理器", () => {
    * 测试将验证：
    *
    * 1. 首个消费者产生一次 subscribe。
-   * 2. 相同协议键与 identity 的第二个消费者不重复 subscribe。
+   * 2. 相同 identity 的第二个消费者不重复 subscribe。
    * 3. 两个消费者接收同一条实时消息。
    * 4. 第一个消费者退出时不产生 unsubscribe。
    * 5. 最后一个消费者退出时只产生一次 unsubscribe。
@@ -56,11 +56,7 @@ describe("订阅管理器", () => {
         const secondScope = yield* Scope.make()
         const firstMessage = yield* Deferred.make<unknown>()
         const secondMessage = yield* Deferred.make<unknown>()
-        const stream = manager.stream(
-          "resourceUpdated",
-          protocol,
-          protocol.subscription("resource-1"),
-        )
+        const stream = manager.stream(protocol, protocol.subscription("resource-1"))
 
         const first = yield* Stream.runForEach(stream, (message) =>
           Deferred.succeed(firstMessage, message),
@@ -118,11 +114,11 @@ describe("订阅管理器", () => {
         const secondMessage = yield* Deferred.make<unknown>()
 
         const first = yield* Stream.runForEach(
-          manager.stream("resourceUpdated", protocol, protocol.subscription("resource-1")),
+          manager.stream(protocol, protocol.subscription("resource-1")),
           (message) => Deferred.succeed(firstMessage, message),
         ).pipe(Effect.forkIn(firstScope))
         const second = yield* Stream.runForEach(
-          manager.stream("resourceUpdated", protocol, protocol.subscription("resource-2")),
+          manager.stream(protocol, protocol.subscription("resource-2")),
           (message) => Deferred.succeed(secondMessage, message),
         ).pipe(Effect.forkIn(secondScope))
         yield* Effect.all([Fiber.status(first), Fiber.status(second)], {
@@ -154,7 +150,7 @@ describe("订阅管理器", () => {
    * 2. 慢消费者只保留最新待处理值，观察到的序列为 [1, 3] 而不是 [1, 2, 3]。
    * 3. 后加入的消费者不会接收加入前的历史值。
    * 4. 新值发布后，先后加入的消费者都能接收该实时值。
-   * 5. 所有行为仅通过共享消息流观察，不检查 PubSub 或其容量。
+   * 5. 所有行为仅通过共享消息流观察，不检查消费者 Queue 或其容量。
    */
   test("慢消费者只保留最新待处理值且新消费者不接收历史值", async () => {
     const protocol = defineProtocol({
@@ -173,7 +169,7 @@ describe("订阅管理器", () => {
         const firstValues = yield* Ref.make<ReadonlyArray<number>>([])
         const firstReceivedFour = yield* Deferred.make<void>()
         const secondValue = yield* Deferred.make<number>()
-        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream(protocol, protocol.subscription())
 
         const first = yield* Stream.runForEach(stream, (value) =>
           Effect.gen(function* () {
@@ -246,7 +242,7 @@ describe("订阅管理器", () => {
         const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
-        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream(protocol, protocol.subscription())
 
         const failureScope = yield* Scope.make()
         const failingConsumer = yield* stream.pipe(
@@ -307,7 +303,7 @@ describe("订阅管理器", () => {
         const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
-        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream(protocol, protocol.subscription())
 
         const firstScope = yield* Scope.make()
         const firstMessage = yield* Deferred.make<number>()
@@ -367,7 +363,7 @@ describe("订阅管理器", () => {
         const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
-        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream(protocol, protocol.subscription())
         const scopes = yield* Effect.forEach(Array.from({ length: 20 }), () => Scope.make(), {
           concurrency: "unbounded",
         })
@@ -387,7 +383,11 @@ describe("订阅管理器", () => {
           concurrency: "unbounded",
           discard: true,
         })
-        expect(controls).toEqual(["subscribe:updates", "unsubscribe:updates"])
+        const completed = yield* Effect.sync(() => controls.slice()).pipe(
+          Effect.filterOrFail((current) => current.length === 2),
+          Effect.eventually,
+        )
+        expect(completed).toEqual(["subscribe:updates", "unsubscribe:updates"])
 
         yield* Effect.forEach(scopes, (scope) => Scope.close(scope, Exit.void), {
           concurrency: "unbounded",
@@ -432,7 +432,7 @@ describe("订阅管理器", () => {
         const scope = yield* Scope.make()
         const message = yield* Deferred.make<number>()
         const consumer = yield* Stream.runForEach(
-          manager.stream("resourceUpdated", protocol, protocol.subscription()),
+          manager.stream(protocol, protocol.subscription()),
           (value) => Deferred.succeed(message, value),
         ).pipe(Effect.forkIn(scope))
 
@@ -490,7 +490,7 @@ describe("订阅管理器", () => {
         const a2Message = yield* Deferred.make<number>()
 
         const a1 = yield* Stream.runForEach(
-          manager.stream("protocolA", protocolA, protocolA.subscription("A1")),
+          manager.stream(protocolA, protocolA.subscription("A1")),
           (message) => Deferred.succeed(a1Message, message),
         ).pipe(Effect.forkIn(a1Scope))
         yield* Fiber.status(a1).pipe(
@@ -498,7 +498,7 @@ describe("订阅管理器", () => {
           Effect.eventually,
         )
         const b1 = yield* Stream.runForEach(
-          manager.stream("protocolB", protocolB, protocolB.subscription("B1")),
+          manager.stream(protocolB, protocolB.subscription("B1")),
           (message) => Deferred.succeed(b1Message, message),
         ).pipe(Effect.forkIn(b1Scope))
         yield* Fiber.status(b1).pipe(
@@ -506,7 +506,7 @@ describe("订阅管理器", () => {
           Effect.eventually,
         )
         const a2 = yield* Stream.runForEach(
-          manager.stream("protocolA", protocolA, protocolA.subscription("A2")),
+          manager.stream(protocolA, protocolA.subscription("A2")),
           (message) => Deferred.succeed(a2Message, message),
         ).pipe(Effect.forkIn(a2Scope))
         yield* Fiber.status(a2).pipe(
@@ -533,14 +533,14 @@ describe("订阅管理器", () => {
   /**
    * 测试将验证：
    *
-   * 1. 两个不同协议键可以使用相同 identity 建立订阅实例。
+   * 1. 两个协议使用各自全局唯一的 identity 建立订阅实例。
    * 2. 两个实例分别产生自己的 subscribe 控制消息。
    * 3. 按第一个协议键发布的消息只由第一个消费者接收。
    * 4. 按第二个协议键发布的消息只由第二个消费者接收。
    * 5. 两个实例分别产生自己的 unsubscribe 控制消息。
-   * 6. 实例唯一键是 protocolKey 与 identity 的组合，而不是全局 identity。
+   * 6. 订阅实例只通过全局唯一 identity 关联。
    */
-  test("不同协议键下相同 identity 仍是独立订阅实例", async () => {
+  test("不同协议以全局唯一 identity 建立独立订阅实例", async () => {
     const controls: Array<string> = []
     const updateProtocol = defineProtocol({
       schema: Schema.Number,
@@ -552,7 +552,7 @@ describe("订阅管理器", () => {
         "id" in parsed &&
         parsed.id === identity,
       subscription: () => ({
-        identity: "resource-1",
+        identity: "update:resource-1",
         subscribe: () => "subscribe:update:resource-1",
         unsubscribe: () => "unsubscribe:update:resource-1",
       }),
@@ -567,7 +567,7 @@ describe("订阅管理器", () => {
         "id" in parsed &&
         parsed.id === identity,
       subscription: () => ({
-        identity: "resource-1",
+        identity: "status:resource-1",
         subscribe: () => "subscribe:status:resource-1",
         unsubscribe: () => "unsubscribe:status:resource-1",
       }),
@@ -584,11 +584,11 @@ describe("订阅管理器", () => {
         const statusMessage = yield* Deferred.make<string>()
 
         const updateConsumer = yield* Stream.runForEach(
-          manager.stream("resourceUpdated", updateProtocol, updateProtocol.subscription()),
+          manager.stream(updateProtocol, updateProtocol.subscription()),
           (message) => Deferred.succeed(updateMessage, message),
         ).pipe(Effect.forkIn(updateScope))
         const statusConsumer = yield* Stream.runForEach(
-          manager.stream("statusChanged", statusProtocol, statusProtocol.subscription()),
+          manager.stream(statusProtocol, statusProtocol.subscription()),
           (message) => Deferred.succeed(statusMessage, message),
         ).pipe(Effect.forkIn(statusScope))
         yield* Effect.all([Fiber.status(updateConsumer), Fiber.status(statusConsumer)], {
@@ -600,11 +600,11 @@ describe("订阅管理器", () => {
 
         expect(controls).toEqual(["subscribe:update:resource-1", "subscribe:status:resource-1"])
 
-        yield* publishMatched(manager, { type: "update", id: "resource-1" }, 101)
+        yield* publishMatched(manager, { type: "update", id: "update:resource-1" }, 101)
         expect(yield* Deferred.await(updateMessage)).toBe(101)
         expect(Option.isNone(yield* Deferred.poll(statusMessage))).toBe(true)
 
-        yield* publishMatched(manager, { type: "status", id: "resource-1" }, "active")
+        yield* publishMatched(manager, { type: "status", id: "status:resource-1" }, "active")
         expect(yield* Deferred.await(statusMessage)).toBe("active")
 
         yield* Scope.close(updateScope, Exit.void)
@@ -623,11 +623,11 @@ describe("订阅管理器", () => {
    * 测试将验证：
    *
    * 1. 第一个 subscribe 进入 control writer 后可以被暂停。
-   * 2. writer 暂停期间，第二个订阅实例仍能完成本地建立。
-   * 3. 第二个实例的消费者可以收到本地发布的实时消息。
-   * 4. 第二个 subscribe 不会绕过仍在发送的第一个 subscribe。
-   * 5. writer 恢复后，两个 subscribe 严格按 A → B 的顺序发送。
-   * 6. 两个 unsubscribe 继续通过同一 sender 按 A → B 的顺序发送。
+   * 2. writer 暂停期间，后续 Acquire 保持在同一事件队列中。
+   * 3. 第二个 subscribe 不会绕过仍在发送的第一个 subscribe。
+   * 4. writer 恢复后，两个 subscribe 严格按 A → B 的顺序发送。
+   * 5. B 被事件 Fiber 建立后可以收到匹配消息。
+   * 6. 两个 unsubscribe 继续按 A → B 的事件顺序发送。
    * 7. 测试只观察公开 Stream、消息与 control writer，不读取内部 Queue 或 Fiber。
    */
   test("控制消息通过独立 FIFO sender 发送", async () => {
@@ -660,22 +660,15 @@ describe("订阅管理器", () => {
           const secondScope = yield* Scope.make()
           const secondMessage = yield* Deferred.make<number>()
 
-          yield* Stream.runDrain(
-            manager.stream("resourceUpdated", protocol, protocol.subscription("A")),
-          ).pipe(Effect.forkIn(firstScope))
+          yield* Stream.runDrain(manager.stream(protocol, protocol.subscription("A"))).pipe(
+            Effect.forkIn(firstScope),
+          )
           yield* Deferred.await(firstWriteStarted)
 
-          const second = yield* Stream.runForEach(
-            manager.stream("resourceUpdated", protocol, protocol.subscription("B")),
+          yield* Stream.runForEach(
+            manager.stream(protocol, protocol.subscription("B")),
             (message) => Deferred.succeed(secondMessage, message),
           ).pipe(Effect.forkIn(secondScope))
-          yield* Fiber.status(second).pipe(
-            Effect.filterOrFail(FiberStatus.isSuspended),
-            Effect.eventually,
-          )
-          yield* publishMatched(manager, "B", 202)
-
-          expect(yield* Deferred.await(secondMessage)).toBe(202)
           expect(controls).toEqual(["subscribe:A"])
 
           yield* Deferred.succeed(resumeFirstWrite, undefined)
@@ -685,6 +678,8 @@ describe("订阅管理器", () => {
             Effect.eventually,
           )
           expect(subscribed).toEqual(["subscribe:A", "subscribe:B"])
+          yield* publishMatched(manager, "B", 202)
+          expect(yield* Deferred.await(secondMessage)).toBe(202)
 
           yield* Scope.close(firstScope, Exit.void)
           yield* Scope.close(secondScope, Exit.void)

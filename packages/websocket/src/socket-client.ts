@@ -115,7 +115,7 @@ export const makeSocketClient = <
         protocolKey,
         {
           stream: (...args: ReadonlyArray<unknown>) =>
-            manager.stream(protocolKey, protocol, protocol.subscription(...(args as never[]))),
+            manager.stream(protocol, protocol.subscription(...(args as never[]))),
         },
       ]),
     )
