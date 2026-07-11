@@ -5,9 +5,7 @@ import type { Scope } from "effect"
 /** 一个已经 open、终止后不可复用的 Effect Socket connection epoch。 */
 export interface WebSocketConnection {
   readonly frames: Stream.Stream<string | Uint8Array>
-  readonly send: (
-    control: string | Uint8Array | Socket.CloseEvent,
-  ) => Effect.Effect<void, Socket.SocketError>
+  readonly send: (control: string | Uint8Array) => Effect.Effect<void, Socket.SocketError>
   readonly termination: Effect.Effect<void>
   readonly close: Effect.Effect<void>
 }
@@ -71,10 +69,10 @@ export const makeWebSocketConnection = (
         ),
       )
 
-    return Object.freeze({
+    return {
       frames: Stream.fromQueue(frames),
       send,
       termination: Deferred.await(termination),
       close,
-    })
+    }
   })
