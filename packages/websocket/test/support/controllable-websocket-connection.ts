@@ -1,59 +1,118 @@
-import { Deferred, Effect, Option, Queue, Ref, Stream } from "effect"
+import * as Socket from "@effect/platform/Socket"
+import { Deferred, Effect, Exit, Option, Queue, Ref } from "effect"
 import type { Scope } from "effect"
-import {
-  makeWebSocketConnection,
-  type WebSocketConnection,
-  type WebSocketConnectionTermination,
-} from "../../src/websocket-connection"
+import { makeWebSocketConnection, type WebSocketConnection } from "../../src/websocket-connection"
 
-export interface ControllableWebSocketConnection<RawFrame, Control, SendError> {
-  /** 被测业务只依赖这一生产接口，其余字段仅用于测试驱动 transport。 */
-  readonly connection: WebSocketConnection<RawFrame, Control, SendError, never>
-  readonly emitFrame: (frame: RawFrame) => Effect.Effect<void>
-  readonly takeSent: Effect.Effect<Control>
-  readonly failNextSend: (error: SendError) => Effect.Effect<void>
+type SocketEvent =
+  | { readonly _tag: "Frame"; readonly frame: string | Uint8Array }
+  | { readonly _tag: "End"; readonly exit: Exit.Exit<void, Socket.SocketError> }
+
+export interface ControllableSocket {
+  readonly socket: Socket.Socket
+  readonly open: Effect.Effect<void>
+  readonly failOpen: (error: Socket.SocketError) => Effect.Effect<void>
+  readonly emitFrame: (frame: string | Uint8Array) => Effect.Effect<void>
+  readonly takeSent: Effect.Effect<string | Uint8Array>
+  readonly failNextSend: (error: Socket.SocketError) => Effect.Effect<void>
   readonly disconnect: (code?: number, reason?: string) => Effect.Effect<void>
+  readonly runReleased: Effect.Effect<void>
+  readonly closeCount: Effect.Effect<number>
 }
 
-/** 测试用的可控 connection epoch；业务代码仍通过 connection 公共接口消费。 */
-export const makeControllableWebSocketConnection = <RawFrame, Control, SendError>(): Effect.Effect<
-  ControllableWebSocketConnection<RawFrame, Control, SendError>,
-  never,
-  Scope.Scope
-> =>
+/** 只在测试中模拟 Effect Socket；生产 connection 仍走唯一的 Socket.Socket seam。 */
+export const makeControllableSocket = (): Effect.Effect<ControllableSocket, never, Scope.Scope> =>
   Effect.gen(function* () {
-    // fake 仍使用 Effect 通信原语，使取消、背压和 Scope 语义与生产边界一致。
-    const frames = yield* Queue.unbounded<RawFrame>()
-    const sent = yield* Queue.unbounded<Control>()
-    // 失败只消费一次，下一条控制消息恢复正常发送，便于精确测试单次故障。
-    const nextSendFailure = yield* Ref.make<Option.Option<SendError>>(Option.none())
-    const termination = yield* Deferred.make<WebSocketConnectionTermination<never>>()
+    const opened = yield* Deferred.make<void, Socket.SocketError>()
+    const events = yield* Queue.unbounded<SocketEvent>()
+    const sent = yield* Queue.unbounded<string | Uint8Array>()
+    const nextSendFailure = yield* Ref.make<Option.Option<Socket.SocketError>>(Option.none())
+    const released = yield* Deferred.make<void>()
+    const closes = yield* Ref.make(0)
     yield* Effect.addFinalizer(() =>
-      Effect.all([Queue.shutdown(frames), Queue.shutdown(sent)], { discard: true }),
+      Effect.all([Queue.shutdown(events), Queue.shutdown(sent)], { discard: true }),
     )
 
-    // 把可控 transport adapter 交给同一个生产构造函数，而不是复制连接实现。
-    const connection = yield* makeWebSocketConnection({
-      frames: Stream.fromQueue(frames),
-      write: (control: Control) =>
-        Ref.getAndSet(nextSendFailure, Option.none()).pipe(
-          Effect.flatMap(
-            Option.match({
-              onNone: () => Queue.offer(sent, control).pipe(Effect.asVoid),
-              onSome: Effect.fail,
-            }),
-          ),
+    const runRaw = <A, E = never, R = never>(
+      handler: (frame: string | Uint8Array) => Effect.Effect<A, E, R> | void,
+      options?: { readonly onOpen?: Effect.Effect<void> },
+    ): Effect.Effect<void, Socket.SocketError | E, R> => {
+      const loop: Effect.Effect<void, Socket.SocketError | E, R> = Effect.suspend(() =>
+        Queue.take(events).pipe(
+          Effect.flatMap((event): Effect.Effect<void, Socket.SocketError | E, R> => {
+            if (event["_tag"] === "End") {
+              return Exit.match(event.exit, {
+                onFailure: Effect.failCause,
+                onSuccess: () => Effect.void,
+              })
+            }
+            const result = handler(event.frame)
+            return (Effect.isEffect(result) ? Effect.asVoid(result) : Effect.void).pipe(
+              Effect.zipRight(loop),
+            )
+          }),
         ),
-      awaitTermination: Deferred.await(termination),
-      close: Effect.void,
+      )
+      return Deferred.await(opened).pipe(
+        Effect.zipRight(options?.onOpen ?? Effect.void),
+        Effect.zipRight(loop),
+        Effect.ensuring(Deferred.succeed(released, undefined)),
+      )
+    }
+    const run: Socket.Socket["run"] = (handler, options) =>
+      runRaw(
+        (frame) => handler(typeof frame === "string" ? new TextEncoder().encode(frame) : frame),
+        options,
+      )
+    const writer: Socket.Socket["writer"] = Effect.succeed((control) =>
+      Ref.getAndSet(nextSendFailure, Option.none()).pipe(
+        Effect.flatMap(
+          Option.match({
+            onSome: Effect.fail,
+            onNone: () =>
+              control instanceof Socket.CloseEvent
+                ? Ref.update(closes, (count) => count + 1).pipe(
+                    Effect.zipRight(Queue.offer(events, { _tag: "End", exit: Exit.void })),
+                    Effect.asVoid,
+                  )
+                : Queue.offer(sent, control).pipe(Effect.asVoid),
+          }),
+        ),
+      ),
+    )
+    const socket = Socket.Socket.of({
+      [Socket.TypeId]: Socket.TypeId,
+      run,
+      runRaw,
+      writer,
     })
 
     return {
-      connection,
-      emitFrame: (frame) => Queue.offer(frames, frame).pipe(Effect.asVoid),
+      socket,
+      open: Deferred.succeed(opened, undefined).pipe(Effect.asVoid),
+      failOpen: (error) => Deferred.fail(opened, error).pipe(Effect.asVoid),
+      emitFrame: (frame) => Queue.offer(events, { _tag: "Frame", frame }).pipe(Effect.asVoid),
       takeSent: Queue.take(sent),
       failNextSend: (error) => Ref.set(nextSendFailure, Option.some(error)),
-      disconnect: (code, reason) =>
-        Deferred.succeed(termination, { _tag: "RemoteClose", code, reason }).pipe(Effect.asVoid),
+      disconnect: (code = 1000, reason) =>
+        Queue.offer(events, {
+          _tag: "End",
+          exit: Exit.fail(
+            new Socket.SocketCloseError({ reason: "Close", code, closeReason: reason }),
+          ),
+        }).pipe(Effect.asVoid),
+      runReleased: Deferred.await(released),
+      closeCount: Ref.get(closes),
     }
+  })
+
+export const makeControllableWebSocketConnection = (): Effect.Effect<
+  ControllableSocket & { readonly connection: WebSocketConnection },
+  Socket.SocketError,
+  Scope.Scope
+> =>
+  Effect.gen(function* () {
+    const control = yield* makeControllableSocket()
+    yield* control.open
+    const connection = yield* makeWebSocketConnection(control.socket)
+    return { ...control, connection }
   })
