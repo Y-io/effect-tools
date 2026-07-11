@@ -19,12 +19,24 @@ describe("协议目录", () => {
       resourceUpdated,
       statusChanged,
     })
-    const keys: ReadonlyArray<keyof typeof catalog> = [
-      "resourceUpdated",
-      "statusChanged",
-    ]
+    const keys: ReadonlyArray<keyof typeof catalog> = ["resourceUpdated", "statusChanged"]
+    const args: Parameters<typeof catalog.resourceUpdated.subscription> = ["resource-1"]
+    const message: Schema.Schema.Type<typeof catalog.resourceUpdated.schema> = {
+      id: "resource-1",
+      value: 1,
+    }
+    const verifyPreciseTypes = () => {
+      // @ts-expect-error 目录必须保留 subscription 的参数类型
+      void catalog.resourceUpdated.subscription(1)
+      // @ts-expect-error 目录必须保留 Schema 的输出类型
+      const invalidMessage: Schema.Schema.Type<typeof catalog.resourceUpdated.schema> = null
+      void invalidMessage
+    }
 
     expect(keys).toEqual(["resourceUpdated", "statusChanged"])
+    expect(args).toEqual(["resource-1"])
+    expect(message).toEqual({ id: "resource-1", value: 1 })
+    expect(verifyPreciseTypes).toBeTypeOf("function")
     expect(catalog.resourceUpdated).toBe(resourceUpdated)
     expect(catalog.statusChanged).toBe(statusChanged)
   })

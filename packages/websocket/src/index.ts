@@ -8,9 +8,7 @@ export interface SubscriptionDefinition {
 
 export const defineProtocol = <
   const MessageSchema extends Schema.Schema.Any,
-  const Subscription extends (
-    ...args: never[]
-  ) => SubscriptionDefinition,
+  const Subscription extends (...args: never[]) => SubscriptionDefinition,
 >(definition: {
   readonly schema: MessageSchema
   readonly match: (parsed: unknown, identity: string) => boolean

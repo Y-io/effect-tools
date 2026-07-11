@@ -1,6 +1,6 @@
 # 建立不可变协议目录
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Parent
 
@@ -16,15 +16,20 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] 可以声明由唯一键索引的不可变协议目录。
-- [ ] 每个协议定义必须提供 Effect Schema、`match(parsed, identity): boolean` 和 subscription factory。
-- [ ] subscription factory 接收业务参数并返回字符串 identity，以及可选的 subscribe/unsubscribe 控制消息。
-- [ ] 协议目录保留各协议 subscription factory 的精确参数元组类型。
-- [ ] 协议目录保留各协议 Schema 的解码输出类型。
-- [ ] 协议目录初始化后不能动态增加、删除或替换协议定义。
-- [ ] 测试仅通过公开协议目录 API 验证行为与编译期类型，不断言内部表示。
-- [ ] 类型检查、测试、lint 和格式检查通过。
+- [x] 可以声明由唯一键索引的不可变协议目录。
+- [x] 每个协议定义必须提供 Effect Schema、`match(parsed, identity): boolean` 和 subscription factory。
+- [x] subscription factory 接收业务参数并返回字符串 identity，以及可选的 subscribe/unsubscribe 控制消息。
+- [x] 协议目录保留各协议 subscription factory 的精确参数元组类型。
+- [x] 协议目录保留各协议 Schema 的解码输出类型。
+- [x] 协议目录初始化后不能动态增加、删除或替换协议定义。
+- [x] 测试仅通过公开协议目录 API 验证行为与编译期类型，不断言内部表示。
+- [x] 类型检查、测试、lint 和格式检查通过。
 
 ## Blocked by
 
 None - can start immediately
+
+## Comments
+
+- 完整验证通过：test、typecheck、lint、format check。
+- Standards/Spec 双轴审查完成；Spec 初审发现的目录类型回归覆盖缺口已修复并复核关闭，最终两轴均无剩余 finding。

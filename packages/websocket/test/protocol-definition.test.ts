@@ -9,10 +9,7 @@ describe("协议定义", () => {
       value: Schema.Number,
     })
     const match = (parsed: unknown, identity: string) =>
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "id" in parsed &&
-      parsed.id === identity
+      typeof parsed === "object" && parsed !== null && "id" in parsed && parsed.id === identity
     const subscription = (id: string) => ({ identity: id })
 
     const protocol = defineProtocol({ schema, match, subscription })
