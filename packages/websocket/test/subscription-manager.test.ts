@@ -445,54 +445,84 @@ describe("订阅管理器", () => {
   /**
    * 测试将验证：
    *
-   * 1. 不同订阅实例按照首次创建顺序保存在公开路由边界中。
-   * 2. 每个 coarse matcher 都接收当前订阅实例的 identity。
-   * 3. 多个实例同时匹配时只返回创建顺序中的第一个目标。
-   * 4. 上层向匹配目标发布已解码值后，只有第一个消费者收到消息。
-   * 5. 第二个匹配实例不会收到同一条消息。
-   * 6. 订阅管理器不解析 raw frame，也不执行 Schema 解码。
+   * 1. 按 A1 → B1 → A2 的全局顺序创建三个订阅实例。
+   * 2. A1 不匹配测试消息，B1 与 A2 同时匹配。
+   * 3. 路由选择全局创建顺序更早的 B1，而不是同协议 Map 中的 A2。
+   * 4. B1 消费者收到上层发布的已解码值，A1 与 A2 均不接收。
+   * 5. matcher 调用参数依次为 A1 → B1，证明其接收当前实例 identity。
+   * 6. 找到 B1 后停止匹配，不再调用 A2 的 matcher。
+   * 7. 测试只使用公开 match 与 Stream seam，不读取内部顺序记录或 Map。
    */
-  test("重叠匹配按订阅实例创建顺序取第一个目标", async () => {
-    const protocol = defineProtocol({
+  test("跨协议重叠匹配按全局创建顺序取第一个目标", async () => {
+    const matcherCalls: Array<string> = []
+    const match = (parsed: unknown, identity: string) => {
+      matcherCalls.push(identity)
+      return (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "identities" in parsed &&
+        Array.isArray(parsed.identities) &&
+        parsed.identities.includes(identity)
+      )
+    }
+    const protocolA = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity.startsWith("prices:"),
-      subscription: (market: string) => ({ identity: `prices:${market}` }),
+      match,
+      subscription: (identity: string) => ({ identity }),
+    })
+    const protocolB = defineProtocol({
+      schema: Schema.Number,
+      match,
+      subscription: (identity: string) => ({ identity }),
     })
 
     await Effect.runPromise(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager(() => Effect.void)
-        const firstScope = yield* Scope.make()
-        const secondScope = yield* Scope.make()
-        const firstMessage = yield* Deferred.make<number>()
-        const secondMessage = yield* Deferred.make<number>()
+        const a1Scope = yield* Scope.make()
+        const b1Scope = yield* Scope.make()
+        const a2Scope = yield* Scope.make()
+        const a1Message = yield* Deferred.make<number>()
+        const b1Message = yield* Deferred.make<number>()
+        const a2Message = yield* Deferred.make<number>()
 
-        const first = yield* Stream.runForEach(
-          manager.stream("priceUpdated", protocol, protocol.subscription("BTC")),
-          (message) => Deferred.succeed(firstMessage, message),
-        ).pipe(Effect.forkIn(firstScope))
-        yield* Fiber.status(first).pipe(
+        const a1 = yield* Stream.runForEach(
+          manager.stream("protocolA", protocolA, protocolA.subscription("A1")),
+          (message) => Deferred.succeed(a1Message, message),
+        ).pipe(Effect.forkIn(a1Scope))
+        yield* Fiber.status(a1).pipe(
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
         )
-        const second = yield* Stream.runForEach(
-          manager.stream("priceUpdated", protocol, protocol.subscription("ETH")),
-          (message) => Deferred.succeed(secondMessage, message),
-        ).pipe(Effect.forkIn(secondScope))
-        yield* Fiber.status(second).pipe(
+        const b1 = yield* Stream.runForEach(
+          manager.stream("protocolB", protocolB, protocolB.subscription("B1")),
+          (message) => Deferred.succeed(b1Message, message),
+        ).pipe(Effect.forkIn(b1Scope))
+        yield* Fiber.status(b1).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+        const a2 = yield* Stream.runForEach(
+          manager.stream("protocolA", protocolA, protocolA.subscription("A2")),
+          (message) => Deferred.succeed(a2Message, message),
+        ).pipe(Effect.forkIn(a2Scope))
+        yield* Fiber.status(a2).pipe(
           Effect.filterOrFail(FiberStatus.isSuspended),
           Effect.eventually,
         )
 
-        const target = yield* manager.match({ type: "price" })
+        const target = yield* manager.match({ identities: ["B1", "A2"] })
         expect(Option.isSome(target)).toBe(true)
         if (Option.isSome(target)) yield* target.value.publish(101)
 
-        expect(yield* Deferred.await(firstMessage)).toBe(101)
-        expect(Option.isNone(yield* Deferred.poll(secondMessage))).toBe(true)
+        expect(yield* Deferred.await(b1Message)).toBe(101)
+        expect(Option.isNone(yield* Deferred.poll(a1Message))).toBe(true)
+        expect(Option.isNone(yield* Deferred.poll(a2Message))).toBe(true)
+        expect(matcherCalls).toEqual(["A1", "B1"])
 
-        yield* Scope.close(firstScope, Exit.void)
-        yield* Scope.close(secondScope, Exit.void)
+        yield* Scope.close(a1Scope, Exit.void)
+        yield* Scope.close(b1Scope, Exit.void)
+        yield* Scope.close(a2Scope, Exit.void)
       }),
     )
   })
