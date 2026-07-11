@@ -18,6 +18,9 @@ import {
   type SubscriptionManager,
 } from "../src/index"
 
+const runScoped = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
+  Effect.runPromise(Effect.scoped(effect))
+
 describe("订阅管理器", () => {
   /**
    * 测试将验证：
@@ -41,7 +44,7 @@ describe("订阅管理器", () => {
       }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager((control) =>
           Effect.sync(() => controls.push(control)),
@@ -106,7 +109,7 @@ describe("订阅管理器", () => {
       subscription: (id: string) => ({ identity: id }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager(() => Effect.void)
         const firstScope = yield* Scope.make()
@@ -160,7 +163,7 @@ describe("订阅管理器", () => {
       subscription: () => ({ identity: "prices" }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager(() => Effect.void)
         const firstScope = yield* Scope.make()
@@ -238,7 +241,7 @@ describe("订阅管理器", () => {
       }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager((control) =>
           Effect.sync(() => controls.push(control)),
@@ -299,7 +302,7 @@ describe("订阅管理器", () => {
       subscription: () => ({ identity: "market-price" }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager((control) =>
           Effect.sync(() => controls.push(control)),
@@ -359,7 +362,7 @@ describe("订阅管理器", () => {
       }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager((control) =>
           Effect.sync(() => controls.push(control)),
@@ -415,7 +418,7 @@ describe("订阅管理器", () => {
       }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         let manager: SubscriptionManager
         manager = yield* makeSubscriptionManager((control) =>
@@ -476,7 +479,7 @@ describe("订阅管理器", () => {
       subscription: (identity: string) => ({ identity }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager(() => Effect.void)
         const a1Scope = yield* Scope.make()
@@ -558,7 +561,7 @@ describe("订阅管理器", () => {
       }),
     })
 
-    await Effect.runPromise(
+    await runScoped(
       Effect.gen(function* () {
         const manager = yield* makeSubscriptionManager((control) =>
           Effect.sync(() => controls.push(control)),
@@ -601,6 +604,91 @@ describe("订阅管理器", () => {
           "unsubscribe:status:BTC",
         ])
       }),
+    )
+  })
+
+  /**
+   * 测试将验证：
+   *
+   * 1. 第一个 subscribe 进入 control writer 后可以被暂停。
+   * 2. writer 暂停期间，第二个订阅实例仍能完成本地建立。
+   * 3. 第二个实例的消费者可以收到本地发布的实时消息。
+   * 4. 第二个 subscribe 不会绕过仍在发送的第一个 subscribe。
+   * 5. writer 恢复后，两个 subscribe 严格按 A → B 的顺序发送。
+   * 6. 两个 unsubscribe 继续通过同一 sender 按 A → B 的顺序发送。
+   * 7. 测试只观察公开 Stream、消息与 control writer，不读取内部 Queue 或 Fiber。
+   */
+  test("控制消息通过独立 FIFO sender 发送", async () => {
+    const controls: Array<SubscriptionControl> = []
+    const protocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity.length > 0,
+      subscription: (identity: string) => ({
+        identity,
+        subscribe: `subscribe:${identity}`,
+        unsubscribe: `unsubscribe:${identity}`,
+      }),
+    })
+
+    await runScoped(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const firstWriteStarted = yield* Deferred.make<void>()
+          const resumeFirstWrite = yield* Deferred.make<void>()
+          const manager = yield* makeSubscriptionManager((control) =>
+            Effect.gen(function* () {
+              controls.push(control)
+              if (control === "subscribe:A") {
+                yield* Deferred.succeed(firstWriteStarted, undefined)
+                yield* Deferred.await(resumeFirstWrite)
+              }
+            }),
+          )
+          const firstScope = yield* Scope.make()
+          const secondScope = yield* Scope.make()
+          const secondMessage = yield* Deferred.make<number>()
+
+          yield* Stream.runDrain(
+            manager.stream("priceUpdated", protocol, protocol.subscription("A")),
+          ).pipe(Effect.forkIn(firstScope))
+          yield* Deferred.await(firstWriteStarted)
+
+          const second = yield* Stream.runForEach(
+            manager.stream("priceUpdated", protocol, protocol.subscription("B")),
+            (message) => Deferred.succeed(secondMessage, message),
+          ).pipe(Effect.forkIn(secondScope))
+          yield* Fiber.status(second).pipe(
+            Effect.filterOrFail(FiberStatus.isSuspended),
+            Effect.eventually,
+          )
+          yield* manager.publish("priceUpdated", "B", 202)
+
+          expect(yield* Deferred.await(secondMessage)).toBe(202)
+          expect(controls).toEqual(["subscribe:A"])
+
+          yield* Deferred.succeed(resumeFirstWrite, undefined)
+          const subscribed = yield* Effect.sync(() => controls.slice()).pipe(
+            Effect.filterOrFail((current) => current.length === 2),
+            Effect.zipLeft(Effect.yieldNow()),
+            Effect.eventually,
+          )
+          expect(subscribed).toEqual(["subscribe:A", "subscribe:B"])
+
+          yield* Scope.close(firstScope, Exit.void)
+          yield* Scope.close(secondScope, Exit.void)
+          const completed = yield* Effect.sync(() => controls.slice()).pipe(
+            Effect.filterOrFail((current) => current.length === 4),
+            Effect.zipLeft(Effect.yieldNow()),
+            Effect.eventually,
+          )
+          expect(completed).toEqual([
+            "subscribe:A",
+            "subscribe:B",
+            "unsubscribe:A",
+            "unsubscribe:B",
+          ])
+        }),
+      ),
     )
   })
 })

@@ -1,5 +1,5 @@
-import { Effect, Option, PubSub, Stream } from "effect"
-import type { Schema } from "effect"
+import { Effect, Option, PubSub, Queue, Stream } from "effect"
+import type { Schema, Scope } from "effect"
 import type { SubscriptionDefinition } from "./index"
 
 export type SubscriptionControl = unknown
@@ -36,11 +36,19 @@ export interface SubscriptionManager {
 
 export const makeSubscriptionManager = (
   writeControl: (control: SubscriptionControl) => Effect.Effect<void>,
-): Effect.Effect<SubscriptionManager> =>
+): Effect.Effect<SubscriptionManager, never, Scope.Scope> =>
   Effect.gen(function* () {
     const semaphore = yield* Effect.makeSemaphore(1)
+    const controlQueue = yield* Queue.unbounded<SubscriptionControl>()
     const records = new Map<string, Map<string, SubscriptionRecord>>()
     const orderedRecords: Array<SubscriptionRecord> = []
+
+    yield* Effect.addFinalizer(() => Queue.shutdown(controlQueue))
+    yield* Queue.take(controlQueue).pipe(
+      Effect.flatMap(writeControl),
+      Effect.forever,
+      Effect.forkScoped,
+    )
 
     const release = (protocolKey: string, identity: string) =>
       semaphore.withPermits(1)(
@@ -53,7 +61,7 @@ export const makeSubscriptionManager = (
           if (record.references > 0) return
 
           if (record.definition.unsubscribe !== undefined) {
-            yield* writeControl(record.definition.unsubscribe)
+            yield* Queue.offer(controlQueue, record.definition.unsubscribe)
           }
           protocolRecords?.delete(identity)
           if (protocolRecords?.size === 0) records.delete(protocolKey)
@@ -91,7 +99,7 @@ export const makeSubscriptionManager = (
             yield* Effect.addFinalizer(() => release(protocolKey, definition.identity))
 
             if (isFirstConsumer && definition.subscribe !== undefined) {
-              yield* writeControl(definition.subscribe)
+              yield* Queue.offer(controlQueue, definition.subscribe)
             }
 
             return Stream.fromQueue(messages) as Stream.Stream<never>
