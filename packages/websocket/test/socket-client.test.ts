@@ -5,7 +5,6 @@ import {
   Effect,
   Exit,
   Fiber,
-  FiberStatus,
   Option,
   Ref,
   Schema,
@@ -368,16 +367,20 @@ describe("Socket Client", () => {
             parser: JSON.parse,
           })
           const firstStarted = yield* Deferred.make<void>()
+          const firstReady = yield* Deferred.make<void>()
           const resumeFirst = yield* Deferred.make<void>()
           const firstValues = yield* Ref.make<ReadonlyArray<number>>([])
-          const secondValue = yield* Deferred.make<number>()
           yield* control.readyCount.pipe(
             Effect.filterOrFail((count) => count === 1),
             Effect.eventually,
           )
 
-          const firstConsumer = yield* Stream.runForEach(client.prices.stream(), (value) =>
+          yield* Stream.runForEach(client.prices.stream(), (value) =>
             Effect.gen(function* () {
+              if (value === 0) {
+                yield* Deferred.succeed(firstReady, undefined)
+                return
+              }
               yield* Ref.update(firstValues, (values) => [...values, value])
               if (value === 1) {
                 yield* Deferred.succeed(firstStarted, undefined)
@@ -385,18 +388,16 @@ describe("Socket Client", () => {
               }
             }),
           ).pipe(Effect.forkScoped)
-          yield* Fiber.status(firstConsumer).pipe(
-            Effect.filterOrFail(FiberStatus.isSuspended),
-            Effect.eventually,
-          )
           expect(Option.isNone(yield* control.pollSent)).toBe(true)
 
+          yield* control.emitFrame("0")
+          yield* Deferred.await(firstReady)
           yield* control.emitFrame("1")
           yield* Deferred.await(firstStarted)
           yield* control.emitFrame("2")
           yield* control.emitFrame("3")
           yield* Effect.sync(() => matched.length).pipe(
-            Effect.filterOrFail((length) => length === 3),
+            Effect.filterOrFail((length) => length === 4),
             Effect.eventually,
           )
           yield* Deferred.succeed(resumeFirst, undefined)
@@ -406,18 +407,17 @@ describe("Socket Client", () => {
           )
           expect(values).toEqual([1, 3])
 
-          const secondConsumer = yield* Stream.runForEach(client.prices.stream(), (value) =>
-            Deferred.succeed(secondValue, value),
-          ).pipe(Effect.forkScoped)
-          yield* Fiber.status(secondConsumer).pipe(
-            Effect.filterOrFail(FiberStatus.isSuspended),
+          const historical = yield* client.prices
+            .stream()
+            .pipe(Stream.timeout("1 second"), Stream.runHead, Effect.fork)
+          yield* TestClock.sleeps().pipe(
+            Effect.filterOrFail((sleeps) => sleeps.length === 1),
             Effect.eventually,
           )
-          expect(Option.isNone(yield* Deferred.poll(secondValue))).toBe(true)
-          yield* control.emitFrame("4")
-          expect(yield* Deferred.await(secondValue)).toBe(4)
+          yield* TestClock.adjust("1 second")
+          expect(yield* Fiber.join(historical)).toEqual(Option.none())
         }),
-      ),
+      ).pipe(Effect.provide(TestContext.TestContext)),
     )
   })
 
