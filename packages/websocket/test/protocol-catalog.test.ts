@@ -28,4 +28,25 @@ describe("协议目录", () => {
     expect(catalog.resourceUpdated).toBe(resourceUpdated)
     expect(catalog.statusChanged).toBe(statusChanged)
   })
+
+  test("初始化后不能增加、删除或替换协议定义", () => {
+    const resourceUpdated = defineProtocol({
+      schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
+      match: (_parsed: unknown, identity: string) => identity.length > 0,
+      subscription: (id: string) => ({ identity: id }),
+    })
+    const catalog = defineProtocolCatalog({ resourceUpdated })
+
+    const verifyReadonlyType = () => {
+      // @ts-expect-error 协议目录条目初始化后不能被替换
+      catalog.resourceUpdated = resourceUpdated
+      // @ts-expect-error 协议目录初始化后不能增加新条目
+      catalog.other = resourceUpdated
+      // @ts-expect-error 协议目录条目初始化后不能被删除
+      delete catalog.resourceUpdated
+    }
+
+    expect(verifyReadonlyType).toBeTypeOf("function")
+    expect(Object.isFrozen(catalog)).toBe(true)
+  })
 })

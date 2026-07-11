@@ -27,4 +27,4 @@ export const defineProtocolCatalog = <
   const Catalog extends Readonly<Record<string, AnyProtocolDefinition>>,
 >(
   catalog: Catalog,
-): Catalog => catalog
+): Readonly<Catalog> => Object.freeze(catalog)
