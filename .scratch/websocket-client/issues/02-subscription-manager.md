@@ -16,15 +16,15 @@ Status: needs-info
 
 ## Acceptance criteria
 
-- [ ] 协议键与字符串 identity 的组合唯一标识订阅实例。
+- [x] 协议键与字符串 identity 的组合唯一标识订阅实例。
 - [ ] 订阅实例保持稳定创建顺序，可供上层执行确定性的首匹配路由。
-- [ ] 同一订阅实例的多个活跃消费者接收相同实时消息，不同实例相互隔离。
-- [ ] 共享消息流具有 `PubSub.sliding(1)` 且无 replay 的外部语义。
-- [ ] 首个消费者建立实例并产生至多一次可选 subscribe；后续消费者只增加引用。
-- [ ] 消费者正常结束、失败或中断时由 Scope 自动释放引用；最后一个消费者退出时产生至多一次可选 unsubscribe。
-- [ ] acquire/release 与控制消息顺序串行化，订阅管理器是控制消息的唯一 writer。
-- [ ] 无控制消息的被动订阅仍具有相同 identity、广播与 Scope 语义。
-- [ ] 测试通过订阅管理器公开 API 与真实 Effect Scope 验证，不断言内部 Map、引用字段、PubSub 或 queue。
+- [x] 同一订阅实例的多个活跃消费者接收相同实时消息，不同实例相互隔离。
+- [x] 共享消息流具有 `PubSub.sliding(1)` 且无 replay 的外部语义。
+- [x] 首个消费者建立实例并产生至多一次可选 subscribe；后续消费者只增加引用。
+- [x] 消费者正常结束、失败或中断时由 Scope 自动释放引用；最后一个消费者退出时产生至多一次可选 unsubscribe。
+- [x] acquire/release 与控制消息顺序串行化，订阅管理器是控制消息的唯一 writer。
+- [x] 无控制消息的被动订阅仍具有相同 identity、广播与 Scope 语义。
+- [x] 测试通过订阅管理器公开 API 与真实 Effect Scope 验证，不断言内部 Map、引用字段、PubSub 或 queue。
 - [ ] 类型检查、测试、lint 和格式检查通过。
 
 ## Blocked by
