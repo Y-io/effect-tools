@@ -1,9 +1,15 @@
 {
+  "$schema": "https://raw.githubusercontent.com/Effect-TS/tsgo/refs/heads/main/schema.json",
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
-    "types": ["bun"]
+    "types": ["bun"],
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
   }
 }
