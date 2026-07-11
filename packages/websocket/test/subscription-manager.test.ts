@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Deferred, Effect, Exit, Fiber, FiberStatus, Schema, Scope, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, FiberStatus, Option, Schema, Scope, Stream } from "effect"
 import {
   defineProtocol,
   makeSubscriptionManager,
@@ -60,6 +60,52 @@ describe("订阅管理器", () => {
           { type: "subscribe", id: "resource-1" },
           { type: "unsubscribe", id: "resource-1" },
         ])
+      }),
+    )
+  })
+
+  test("同一协议下不同 identity 的消息相互隔离", async () => {
+    const protocol = defineProtocol({
+      schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
+      match: (parsed: unknown, identity: string) =>
+        typeof parsed === "object" && parsed !== null && "id" in parsed && parsed.id === identity,
+      subscription: (id: string) => ({ identity: id }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const manager = yield* makeSubscriptionManager(() => Effect.void)
+        const firstScope = yield* Scope.make()
+        const secondScope = yield* Scope.make()
+        const firstMessage = yield* Deferred.make<unknown>()
+        const secondMessage = yield* Deferred.make<unknown>()
+
+        const first = yield* Stream.runForEach(
+          manager.stream("resourceUpdated", protocol, protocol.subscription("resource-1")),
+          (message) => Deferred.succeed(firstMessage, message),
+        ).pipe(Effect.forkIn(firstScope))
+        const second = yield* Stream.runForEach(
+          manager.stream("resourceUpdated", protocol, protocol.subscription("resource-2")),
+          (message) => Deferred.succeed(secondMessage, message),
+        ).pipe(Effect.forkIn(secondScope))
+        yield* Effect.all([Fiber.status(first), Fiber.status(second)], {
+          concurrency: "unbounded",
+        }).pipe(
+          Effect.filterOrFail((statuses) => statuses.every(FiberStatus.isSuspended)),
+          Effect.eventually,
+        )
+
+        const resource1 = { id: "resource-1", value: 1 }
+        yield* manager.publish("resourceUpdated", "resource-1", resource1)
+        expect(yield* Deferred.await(firstMessage)).toEqual(resource1)
+        expect(Option.isNone(yield* Deferred.poll(secondMessage))).toBe(true)
+
+        const resource2 = { id: "resource-2", value: 2 }
+        yield* manager.publish("resourceUpdated", "resource-2", resource2)
+        expect(yield* Deferred.await(secondMessage)).toEqual(resource2)
+
+        yield* Scope.close(firstScope, Exit.void)
+        yield* Scope.close(secondScope, Exit.void)
       }),
     )
   })
