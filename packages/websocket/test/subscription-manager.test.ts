@@ -441,4 +441,59 @@ describe("订阅管理器", () => {
       }),
     )
   })
+
+  /**
+   * 测试将验证：
+   *
+   * 1. 不同订阅实例按照首次创建顺序保存在公开路由边界中。
+   * 2. 每个 coarse matcher 都接收当前订阅实例的 identity。
+   * 3. 多个实例同时匹配时只返回创建顺序中的第一个目标。
+   * 4. 上层向匹配目标发布已解码值后，只有第一个消费者收到消息。
+   * 5. 第二个匹配实例不会收到同一条消息。
+   * 6. 订阅管理器不解析 raw frame，也不执行 Schema 解码。
+   */
+  test("重叠匹配按订阅实例创建顺序取第一个目标", async () => {
+    const protocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity.startsWith("prices:"),
+      subscription: (market: string) => ({ identity: `prices:${market}` }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const manager = yield* makeSubscriptionManager(() => Effect.void)
+        const firstScope = yield* Scope.make()
+        const secondScope = yield* Scope.make()
+        const firstMessage = yield* Deferred.make<number>()
+        const secondMessage = yield* Deferred.make<number>()
+
+        const first = yield* Stream.runForEach(
+          manager.stream("priceUpdated", protocol, protocol.subscription("BTC")),
+          (message) => Deferred.succeed(firstMessage, message),
+        ).pipe(Effect.forkIn(firstScope))
+        yield* Fiber.status(first).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+        const second = yield* Stream.runForEach(
+          manager.stream("priceUpdated", protocol, protocol.subscription("ETH")),
+          (message) => Deferred.succeed(secondMessage, message),
+        ).pipe(Effect.forkIn(secondScope))
+        yield* Fiber.status(second).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+
+        const target = yield* manager.match({ type: "price" })
+        expect(Option.isSome(target)).toBe(true)
+        if (Option.isSome(target)) yield* target.value.publish(101)
+
+        expect(yield* Deferred.await(firstMessage)).toBe(101)
+        expect(Option.isNone(yield* Deferred.poll(secondMessage))).toBe(true)
+
+        yield* Scope.close(firstScope, Exit.void)
+        yield* Scope.close(secondScope, Exit.void)
+      }),
+    )
+  })
 })

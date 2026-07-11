@@ -4,6 +4,7 @@ export {
   makeSubscriptionManager,
   type SubscriptionControl,
   type SubscriptionManager,
+  type SubscriptionMatch,
 } from "./subscription-manager"
 
 export interface SubscriptionDefinition {

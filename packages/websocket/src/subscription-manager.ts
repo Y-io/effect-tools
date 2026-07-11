@@ -1,4 +1,4 @@
-import { Effect, PubSub, Stream } from "effect"
+import { Effect, Option, PubSub, Stream } from "effect"
 import type { Schema } from "effect"
 import type { SubscriptionDefinition } from "./index"
 
@@ -6,12 +6,22 @@ export type SubscriptionControl = unknown
 
 interface ProtocolDefinition<MessageSchema extends Schema.Schema.Any> {
   readonly schema: MessageSchema
+  readonly match: (parsed: unknown, identity: string) => boolean
 }
 
 interface SubscriptionRecord {
+  readonly protocolKey: string
+  readonly protocol: ProtocolDefinition<Schema.Schema.Any>
   readonly definition: SubscriptionDefinition
   readonly messages: PubSub.PubSub<unknown>
   references: number
+}
+
+export interface SubscriptionMatch {
+  readonly protocolKey: string
+  readonly protocol: ProtocolDefinition<Schema.Schema.Any>
+  readonly identity: string
+  readonly publish: (message: unknown) => Effect.Effect<void>
 }
 
 export interface SubscriptionManager {
@@ -21,6 +31,7 @@ export interface SubscriptionManager {
     definition: SubscriptionDefinition,
   ) => Stream.Stream<Schema.Schema.Type<MessageSchema>>
   readonly publish: (protocolKey: string, identity: string, message: unknown) => Effect.Effect<void>
+  readonly match: (parsed: unknown) => Effect.Effect<Option.Option<SubscriptionMatch>>
 }
 
 export const makeSubscriptionManager = (
@@ -29,6 +40,7 @@ export const makeSubscriptionManager = (
   Effect.gen(function* () {
     const semaphore = yield* Effect.makeSemaphore(1)
     const records = new Map<string, Map<string, SubscriptionRecord>>()
+    const orderedRecords: Array<SubscriptionRecord> = []
 
     const release = (protocolKey: string, identity: string) =>
       semaphore.withPermits(1)(
@@ -45,10 +57,12 @@ export const makeSubscriptionManager = (
           }
           protocolRecords?.delete(identity)
           if (protocolRecords?.size === 0) records.delete(protocolKey)
+          const orderIndex = orderedRecords.indexOf(record)
+          if (orderIndex >= 0) orderedRecords.splice(orderIndex, 1)
         }),
       )
 
-    const stream: SubscriptionManager["stream"] = (protocolKey, _protocol, definition) =>
+    const stream: SubscriptionManager["stream"] = (protocolKey, protocol, definition) =>
       Stream.unwrapScoped(
         semaphore.withPermits(1)(
           Effect.gen(function* () {
@@ -62,11 +76,14 @@ export const makeSubscriptionManager = (
             const isFirstConsumer = record === undefined
             if (record === undefined) {
               record = {
+                protocolKey,
+                protocol,
                 definition,
                 messages: yield* PubSub.sliding<unknown>(1),
                 references: 0,
               }
               protocolRecords.set(definition.identity, record)
+              orderedRecords.push(record)
             }
 
             record.references += 1
@@ -88,5 +105,20 @@ export const makeSubscriptionManager = (
         if (record !== undefined) yield* PubSub.publish(record.messages, message)
       })
 
-    return { stream, publish }
+    const match: SubscriptionManager["match"] = (parsed) =>
+      Effect.sync(() => {
+        for (const record of orderedRecords) {
+          if (record.protocol.match(parsed, record.definition.identity)) {
+            return Option.some({
+              protocolKey: record.protocolKey,
+              protocol: record.protocol,
+              identity: record.definition.identity,
+              publish: (message) => PubSub.publish(record.messages, message).pipe(Effect.asVoid),
+            })
+          }
+        }
+        return Option.none()
+      })
+
+    return { stream, publish, match }
   })
