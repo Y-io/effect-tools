@@ -4,9 +4,13 @@ import type { Scope } from "effect"
 
 /** 一个已经 open、终止后不可复用的 Effect Socket connection epoch。 */
 export interface WebSocketConnection {
+  /** 连接存活期间收到的原始文本或二进制帧。 */
   readonly frames: Stream.Stream<string | Uint8Array>
+  /** 串行发送一个控制帧；写失败会终止当前 epoch。 */
   readonly send: (control: string | Uint8Array) => Effect.Effect<void, Socket.SocketError>
+  /** 远端断开、本地关闭或底层失败后完成；具体原因由重连层统一处理。 */
   readonly termination: Effect.Effect<void>
+  /** 幂等请求关闭当前 epoch。 */
   readonly close: Effect.Effect<void>
 }
 
@@ -50,6 +54,7 @@ export const makeWebSocketConnection = (
 
     yield* Deferred.await(opened)
 
+    // CloseEvent 写失败时直接中断 run fiber，保证 close 总能推进到 termination。
     const close = Ref.getAndSet(closeRequested, true).pipe(
       Effect.flatMap((alreadyRequested) =>
         alreadyRequested
@@ -62,6 +67,7 @@ export const makeWebSocketConnection = (
     )
     yield* Effect.addFinalizer(() => close)
 
+    // semaphore 防止并发调用绕过底层 writer 的发送顺序。
     const send: WebSocketConnection["send"] = (control) =>
       sendSemaphore.withPermits(1)(
         Ref.get(active).pipe(

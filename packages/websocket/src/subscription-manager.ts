@@ -17,6 +17,7 @@ interface MessageProtocol<MessageSchema extends Schema.Schema.AnyNoContext> {
   readonly match: (parsed: unknown, identity: string) => boolean
 }
 
+/** 当前活跃订阅实例的期望状态；不绑定任何具体连接。 */
 interface SubscriptionRecord {
   readonly protocolKey: string
   readonly protocol: MessageProtocol<Schema.Schema.AnyNoContext>
@@ -37,13 +38,17 @@ interface SubscriptionState {
   readonly connection: Option.Option<ConnectionEpoch>
 }
 
+/** 仅属于一次连接的控制消息队列；断线后不可复用。 */
 interface ConnectionEpoch {
   readonly controls: Queue.Queue<string>
 }
 
 export interface SubscriptionMatch {
+  /** 命中实例所属的协议目录键。 */
   readonly protocolKey: string
+  /** 命中实例共享的协议定义，用于上层执行 Schema 解码。 */
   readonly protocol: MessageProtocol<Schema.Schema.AnyNoContext>
+  /** 命中实例的内部标识。 */
   readonly identity: string
   /** 将上层完成 Schema 解码后的消息广播给匹配的订阅实例。 */
   readonly publish: (message: unknown) => Effect.Effect<void>
@@ -213,6 +218,10 @@ export const makeSubscriptionManager = (): Effect.Effect<SubscriptionManager, ne
         }),
       )
 
+    /**
+     * 安装新 connection epoch，并按稳定创建顺序从当前期望状态重建 subscribe。
+     * 唯一 sender 串行等待每次 send；send 失败原样结束本 Effect，交由 Socket Client 关闭连接。
+     */
     const runConnection: SubscriptionManager["runConnection"] = (send) =>
       Effect.gen(function* () {
         const controls = yield* Queue.unbounded<string>()
