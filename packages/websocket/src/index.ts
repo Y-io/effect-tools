@@ -1,5 +1,11 @@
 import type { Schema } from "effect"
 
+export {
+  makeSubscriptionManager,
+  type SubscriptionControl,
+  type SubscriptionManager,
+} from "./subscription-manager"
+
 export interface SubscriptionDefinition {
   readonly identity: string
   readonly subscribe?: unknown
