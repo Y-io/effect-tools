@@ -5,7 +5,9 @@ import {
   Effect,
   Exit,
   Fiber,
+  FiberStatus,
   Option,
+  Ref,
   Schema,
   Scope,
   Stream,
@@ -191,7 +193,7 @@ describe("Socket Client", () => {
           yield* Fiber.interrupt(consumer)
 
           yield* TestClock.adjust("3 seconds")
-          yield* control.runCount.pipe(
+          yield* control.readyCount.pipe(
             Effect.filterOrFail((count) => count === 2),
             Effect.eventually,
           )
@@ -312,6 +314,141 @@ describe("Socket Client", () => {
           yield* control.emitFrame(JSON.stringify({ identities: ["first", "second"], value: 1 }))
           expect(yield* Deferred.await(first)).toBe(1)
           expect(Option.isNone(yield* Deferred.poll(second))).toBe(true)
+        }),
+      ),
+    )
+  })
+
+  test("首个消费者在 subscribe 发送前已接入即时响应", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          yield* control.replyToNextSend(
+            JSON.stringify({ type: "price", symbol: "BTC", value: 101 }),
+          )
+          const client = yield* makeSocketClient({
+            catalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+
+          expect(yield* Stream.runHead(client.prices.stream("BTC"))).toEqual(
+            Option.some({ type: "price", symbol: "BTC", value: 101 }),
+          )
+          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          expect(yield* control.takeSent).toBe("unsubscribe:BTC")
+        }),
+      ),
+    )
+  })
+
+  test("被动订阅保持 latest-value 且新消费者不接收历史值", async () => {
+    const matched: Array<unknown> = []
+    const passiveCatalog = defineProtocolCatalog({
+      prices: defineProtocol({
+        schema: Schema.Number,
+        match: (parsed: unknown, identity: string) => {
+          matched.push(parsed)
+          return identity === "prices"
+        },
+        subscription: () => ({ identity: "prices" }),
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog: passiveCatalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+          const firstStarted = yield* Deferred.make<void>()
+          const resumeFirst = yield* Deferred.make<void>()
+          const firstValues = yield* Ref.make<ReadonlyArray<number>>([])
+          const secondValue = yield* Deferred.make<number>()
+          yield* control.readyCount.pipe(
+            Effect.filterOrFail((count) => count === 1),
+            Effect.eventually,
+          )
+
+          const firstConsumer = yield* Stream.runForEach(client.prices.stream(), (value) =>
+            Effect.gen(function* () {
+              yield* Ref.update(firstValues, (values) => [...values, value])
+              if (value === 1) {
+                yield* Deferred.succeed(firstStarted, undefined)
+                yield* Deferred.await(resumeFirst)
+              }
+            }),
+          ).pipe(Effect.forkScoped)
+          yield* Fiber.status(firstConsumer).pipe(
+            Effect.filterOrFail(FiberStatus.isSuspended),
+            Effect.eventually,
+          )
+          expect(Option.isNone(yield* control.pollSent)).toBe(true)
+
+          yield* control.emitFrame("1")
+          yield* Deferred.await(firstStarted)
+          yield* control.emitFrame("2")
+          yield* control.emitFrame("3")
+          yield* Effect.sync(() => matched.length).pipe(
+            Effect.filterOrFail((length) => length === 3),
+            Effect.eventually,
+          )
+          yield* Deferred.succeed(resumeFirst, undefined)
+          const values = yield* Ref.get(firstValues).pipe(
+            Effect.filterOrFail((current) => current.length === 2),
+            Effect.eventually,
+          )
+          expect(values).toEqual([1, 3])
+
+          const secondConsumer = yield* Stream.runForEach(client.prices.stream(), (value) =>
+            Deferred.succeed(secondValue, value),
+          ).pipe(Effect.forkScoped)
+          yield* Fiber.status(secondConsumer).pipe(
+            Effect.filterOrFail(FiberStatus.isSuspended),
+            Effect.eventually,
+          )
+          expect(Option.isNone(yield* Deferred.poll(secondValue))).toBe(true)
+          yield* control.emitFrame("4")
+          expect(yield* Deferred.await(secondValue)).toBe(4)
+        }),
+      ),
+    )
+  })
+
+  test("并发消费者只产生一对订阅控制消息", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+          const scopes = yield* Effect.forEach(Array.from({ length: 20 }), () => Scope.make(), {
+            concurrency: "unbounded",
+          })
+          const consumers = yield* Effect.forEach(
+            scopes,
+            (scope) => Stream.runDrain(client.prices.stream("BTC")).pipe(Effect.forkIn(scope)),
+            { concurrency: "unbounded" },
+          )
+
+          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          expect(Option.isNone(yield* control.pollSent)).toBe(true)
+          yield* Effect.forEach(consumers, Fiber.interrupt, {
+            concurrency: "unbounded",
+            discard: true,
+          })
+          expect(yield* control.takeSent).toBe("unsubscribe:BTC")
+          expect(Option.isNone(yield* control.pollSent)).toBe(true)
         }),
       ),
     )

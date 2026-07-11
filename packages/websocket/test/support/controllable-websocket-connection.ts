@@ -15,9 +15,11 @@ export interface ControllableSocket {
   readonly takeSent: Effect.Effect<string | Uint8Array>
   readonly pollSent: Effect.Effect<Option.Option<string | Uint8Array>>
   readonly failNextSend: (error: Socket.SocketError) => Effect.Effect<void>
+  readonly replyToNextSend: (frame: string | Uint8Array) => Effect.Effect<void>
   readonly disconnect: (code?: number, reason?: string) => Effect.Effect<void>
   readonly runReleased: Effect.Effect<void>
   readonly runCount: Effect.Effect<number>
+  readonly readyCount: Effect.Effect<number>
   readonly closeCount: Effect.Effect<number>
 }
 
@@ -28,8 +30,10 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
     const events = yield* Queue.unbounded<SocketEvent>()
     const sent = yield* Queue.unbounded<string | Uint8Array>()
     const nextSendFailure = yield* Ref.make<Option.Option<Socket.SocketError>>(Option.none())
+    const nextSendReply = yield* Ref.make<Option.Option<string | Uint8Array>>(Option.none())
     const released = yield* Deferred.make<void>()
     const runs = yield* Ref.make(0)
+    const readyRuns = yield* Ref.make(0)
     const running = yield* Ref.make(false)
     const closes = yield* Ref.make(0)
     yield* Effect.addFinalizer(() =>
@@ -60,6 +64,7 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
         Effect.zipRight(Ref.update(runs, (count) => count + 1)),
         Effect.zipRight(Deferred.await(opened)),
         Effect.zipRight(options?.onOpen ?? Effect.void),
+        Effect.zipRight(Ref.update(readyRuns, (count) => count + 1)),
         Effect.zipRight(loop),
         Effect.ensuring(
           Ref.set(running, false).pipe(Effect.zipRight(Deferred.succeed(released, undefined))),
@@ -90,7 +95,20 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
                     ),
                     Effect.asVoid,
                   )
-                : Queue.offer(sent, control).pipe(Effect.asVoid),
+                : Queue.offer(sent, control).pipe(
+                    Effect.zipRight(
+                      Ref.getAndSet(nextSendReply, Option.none()).pipe(
+                        Effect.flatMap(
+                          Option.match({
+                            onNone: () => Effect.void,
+                            onSome: (frame) =>
+                              Queue.offer(events, { _tag: "Frame", frame }).pipe(Effect.asVoid),
+                          }),
+                        ),
+                      ),
+                    ),
+                    Effect.asVoid,
+                  ),
           }),
         ),
       ),
@@ -110,6 +128,7 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
       takeSent: Queue.take(sent),
       pollSent: Queue.poll(sent),
       failNextSend: (error) => Ref.set(nextSendFailure, Option.some(error)),
+      replyToNextSend: (frame) => Ref.set(nextSendReply, Option.some(frame)),
       disconnect: (code = 1000, reason) =>
         Queue.offer(events, {
           _tag: "End",
@@ -119,6 +138,7 @@ export const makeControllableSocket = (): Effect.Effect<ControllableSocket, neve
         }).pipe(Effect.asVoid),
       runReleased: Deferred.await(released),
       runCount: Ref.get(runs),
+      readyCount: Ref.get(readyRuns),
       closeCount: Ref.get(closes),
     }
   })
