@@ -9,6 +9,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test --pass-with-no-tests",
+    "test:integration": "WEBSOCKET_INTEGRATION=1 bun test test-integration/socket-client.integration.test.ts",
     "lint": "oxlint .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check ."
