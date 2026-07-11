@@ -16,3 +16,15 @@ export const defineProtocol = <
   readonly match: (parsed: unknown, identity: string) => boolean
   readonly subscription: Subscription
 }) => definition
+
+type AnyProtocolDefinition = {
+  readonly schema: Schema.Schema.Any
+  readonly match: (parsed: unknown, identity: string) => boolean
+  readonly subscription: (...args: never[]) => SubscriptionDefinition
+}
+
+export const defineProtocolCatalog = <
+  const Catalog extends Readonly<Record<string, AnyProtocolDefinition>>,
+>(
+  catalog: Catalog,
+): Catalog => catalog
