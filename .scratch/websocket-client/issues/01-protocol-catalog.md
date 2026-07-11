@@ -1,6 +1,6 @@
 # 建立不可变协议目录
 
-Status: needs-info
+Status: ready-for-agent
 
 ## Parent
 
@@ -28,7 +28,3 @@ Status: needs-info
 ## Blocked by
 
 None - can start immediately
-
-## Execution gate
-
-等待用户明确确认后才能开始实现。
