@@ -16,9 +16,9 @@ Status: needs-info
 
 ## Acceptance criteria
 
-- [ ] 公开连接接口允许消费 raw WebSocket frame。
-- [ ] 公开连接接口允许按调用顺序发送订阅控制消息，并报告发送失败。
-- [ ] 连接可以报告远端断开、本地关闭及底层失败。
+- [x] 公开连接接口允许消费 raw WebSocket frame。
+- [x] 公开连接接口允许按调用顺序发送订阅控制消息，并报告发送失败。
+- [x] 连接可以报告远端断开、本地关闭及底层失败。
 - [ ] Effect Scope 结束会确定性关闭当前连接并释放接收与发送资源。
 - [ ] 可以通过同一公开接口提供可控 fake connection，支持发出 frame、断线和发送失败。
 - [ ] 连接边界不包含 parser、Schema、订阅实例、引用计数或重连策略。

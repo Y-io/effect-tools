@@ -6,6 +6,11 @@ export {
   type SubscriptionManager,
   type SubscriptionMatch,
 } from "./subscription-manager"
+export {
+  makeWebSocketConnection,
+  type WebSocketConnection,
+  type WebSocketConnectionTermination,
+} from "./websocket-connection"
 
 export interface SubscriptionDefinition {
   readonly identity: string
