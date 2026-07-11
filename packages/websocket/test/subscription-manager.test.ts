@@ -227,4 +227,50 @@ describe("订阅管理器", () => {
       }),
     )
   })
+
+  test("无控制消息的被动订阅仍具有完整的 Scope 与消息流语义", async () => {
+    const controls: Array<SubscriptionControl> = []
+    const protocol = defineProtocol({
+      schema: Schema.Number,
+      match: (_parsed: unknown, identity: string) => identity === "market-price",
+      subscription: () => ({ identity: "market-price" }),
+    })
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const manager = yield* makeSubscriptionManager((control) =>
+          Effect.sync(() => controls.push(control)),
+        )
+        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+
+        const firstScope = yield* Scope.make()
+        const firstMessage = yield* Deferred.make<number>()
+        const first = yield* Stream.runForEach(stream, (message) =>
+          Deferred.succeed(firstMessage, message),
+        ).pipe(Effect.forkIn(firstScope))
+        yield* Fiber.status(first).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+        yield* manager.publish("priceUpdated", "market-price", 101)
+        expect(yield* Deferred.await(firstMessage)).toBe(101)
+        yield* Scope.close(firstScope, Exit.void)
+
+        const secondScope = yield* Scope.make()
+        const secondMessage = yield* Deferred.make<number>()
+        const second = yield* Stream.runForEach(stream, (message) =>
+          Deferred.succeed(secondMessage, message),
+        ).pipe(Effect.forkIn(secondScope))
+        yield* Fiber.status(second).pipe(
+          Effect.filterOrFail(FiberStatus.isSuspended),
+          Effect.eventually,
+        )
+        yield* manager.publish("priceUpdated", "market-price", 102)
+        expect(yield* Deferred.await(secondMessage)).toBe(102)
+        yield* Scope.close(secondScope, Exit.void)
+
+        expect(controls).toEqual([])
+      }),
+    )
+  })
 })
