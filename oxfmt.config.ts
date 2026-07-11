@@ -10,6 +10,7 @@ export default defineConfig({
     "coverage/**",
     ".scratch/**",
     ".idea/**",
+    "repos/**",
     "docs/**",
     "**/*.md",
     "**/*.lock",

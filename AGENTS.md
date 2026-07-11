@@ -6,6 +6,21 @@
 
 使用 Bun 作为运行时、包管理器和脚本执行器。
 
+## 外部源码参考
+
+`repos/effect/` 通过 Git subtree 引入 `Effect-TS/effect` 的 Effect v3 源码，版本必须与项目实际安装的 `effect` 版本保持一致。
+
+- 编写或审查 Effect 代码时，优先检查 `repos/effect/packages/effect/src/` 中的实现和 `repos/effect/packages/effect/test/` 中的测试，再按需查阅相关包的 README。
+- 将 `repos/effect/` 视为只读参考资料；除非任务明确要求，否则不要修改其中的文件。
+- 不要从 `repos/effect/` 导入任何模块；项目代码必须继续使用 `package.json` 中声明的依赖。
+- 更新 `effect` 依赖时，同步更新此 subtree 到相同版本的 `effect@<version>` tag。
+
+同步上游源码时使用：
+
+```sh
+git subtree pull --prefix=repos/effect https://github.com/Effect-TS/effect.git effect@3.21.4 --squash
+```
+
 ## Agent 技能
 
 ### Issue tracker

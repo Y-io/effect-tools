@@ -14,7 +14,7 @@ export default defineConfig({
     ".turbo",
     ".next",
     ".vite",
-    "repos",
+    "repos/**",
   ],
   plugins: [],
 } as OxlintConfig)
