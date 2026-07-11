@@ -159,8 +159,8 @@ describe("订阅管理器", () => {
   test("慢消费者只保留最新待处理值且新消费者不接收历史值", async () => {
     const protocol = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity === "prices",
-      subscription: () => ({ identity: "prices" }),
+      match: (_parsed: unknown, identity: string) => identity === "updates",
+      subscription: () => ({ identity: "updates" }),
     })
 
     await runScoped(
@@ -173,7 +173,7 @@ describe("订阅管理器", () => {
         const firstValues = yield* Ref.make<ReadonlyArray<number>>([])
         const firstReceivedFour = yield* Deferred.make<void>()
         const secondValue = yield* Deferred.make<number>()
-        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
 
         const first = yield* Stream.runForEach(stream, (value) =>
           Effect.gen(function* () {
@@ -233,11 +233,11 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity === "prices",
+      match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
-        identity: "prices",
-        subscribe: () => "subscribe:prices",
-        unsubscribe: () => "unsubscribe:prices",
+        identity: "updates",
+        subscribe: () => "subscribe:updates",
+        unsubscribe: () => "unsubscribe:updates",
       }),
     })
 
@@ -246,7 +246,7 @@ describe("订阅管理器", () => {
         const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
-        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
 
         const failureScope = yield* Scope.make()
         const failingConsumer = yield* stream.pipe(
@@ -261,7 +261,7 @@ describe("订阅管理器", () => {
         )
         yield* publishMatched(manager, 1, 1)
         expect(yield* Fiber.await(failingConsumer)).toEqual(Exit.fail("consumer failed"))
-        expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
+        expect(controls).toEqual(["subscribe:updates", "unsubscribe:updates"])
 
         const interruptionScope = yield* Scope.make()
         const interruptedConsumer = yield* Stream.runDrain(stream).pipe(
@@ -273,10 +273,10 @@ describe("订阅管理器", () => {
         )
         yield* Fiber.interrupt(interruptedConsumer)
         expect(controls).toEqual([
-          "subscribe:prices",
-          "unsubscribe:prices",
-          "subscribe:prices",
-          "unsubscribe:prices",
+          "subscribe:updates",
+          "unsubscribe:updates",
+          "subscribe:updates",
+          "unsubscribe:updates",
         ])
 
         yield* Scope.close(failureScope, Exit.void)
@@ -298,8 +298,8 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity === "market-price",
-      subscription: () => ({ identity: "market-price" }),
+      match: (_parsed: unknown, identity: string) => identity === "passive-updates",
+      subscription: () => ({ identity: "passive-updates" }),
     })
 
     await runScoped(
@@ -307,7 +307,7 @@ describe("订阅管理器", () => {
         const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
-        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
 
         const firstScope = yield* Scope.make()
         const firstMessage = yield* Deferred.make<number>()
@@ -354,11 +354,11 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity === "prices",
+      match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
-        identity: "prices",
-        subscribe: () => "subscribe:prices",
-        unsubscribe: () => "unsubscribe:prices",
+        identity: "updates",
+        subscribe: () => "subscribe:updates",
+        unsubscribe: () => "unsubscribe:updates",
       }),
     })
 
@@ -367,7 +367,7 @@ describe("订阅管理器", () => {
         const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
-        const stream = manager.stream("priceUpdated", protocol, protocol.subscription())
+        const stream = manager.stream("resourceUpdated", protocol, protocol.subscription())
         const scopes = yield* Effect.forEach(Array.from({ length: 20 }), () => Scope.make(), {
           concurrency: "unbounded",
         })
@@ -381,13 +381,13 @@ describe("订阅管理器", () => {
           Effect.eventually,
         )
 
-        expect(controls).toEqual(["subscribe:prices"])
+        expect(controls).toEqual(["subscribe:updates"])
 
         yield* Effect.forEach(consumers, Fiber.interrupt, {
           concurrency: "unbounded",
           discard: true,
         })
-        expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
+        expect(controls).toEqual(["subscribe:updates", "unsubscribe:updates"])
 
         yield* Effect.forEach(scopes, (scope) => Scope.close(scope, Exit.void), {
           concurrency: "unbounded",
@@ -410,11 +410,11 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
-      match: (_parsed: unknown, identity: string) => identity === "prices",
+      match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
-        identity: "prices",
-        subscribe: () => "subscribe:prices",
-        unsubscribe: () => "unsubscribe:prices",
+        identity: "updates",
+        subscribe: () => "subscribe:updates",
+        unsubscribe: () => "unsubscribe:updates",
       }),
     })
 
@@ -424,7 +424,7 @@ describe("订阅管理器", () => {
         manager = yield* makeConnectedManager((control) =>
           Effect.gen(function* () {
             controls.push(control)
-            if (control === "subscribe:prices") {
+            if (control === "subscribe:updates") {
               yield* publishMatched(manager, 101, 101)
             }
           }),
@@ -432,14 +432,14 @@ describe("订阅管理器", () => {
         const scope = yield* Scope.make()
         const message = yield* Deferred.make<number>()
         const consumer = yield* Stream.runForEach(
-          manager.stream("priceUpdated", protocol, protocol.subscription()),
+          manager.stream("resourceUpdated", protocol, protocol.subscription()),
           (value) => Deferred.succeed(message, value),
         ).pipe(Effect.forkIn(scope))
 
         expect(yield* Deferred.await(message)).toBe(101)
 
         yield* Fiber.interrupt(consumer)
-        expect(controls).toEqual(["subscribe:prices", "unsubscribe:prices"])
+        expect(controls).toEqual(["subscribe:updates", "unsubscribe:updates"])
         yield* Scope.close(scope, Exit.void)
       }),
     )
@@ -542,19 +542,19 @@ describe("订阅管理器", () => {
    */
   test("不同协议键下相同 identity 仍是独立订阅实例", async () => {
     const controls: Array<string> = []
-    const priceProtocol = defineProtocol({
+    const updateProtocol = defineProtocol({
       schema: Schema.Number,
       match: (parsed: unknown, identity: string) =>
         typeof parsed === "object" &&
         parsed !== null &&
         "type" in parsed &&
-        parsed.type === "price" &&
+        parsed.type === "update" &&
         "id" in parsed &&
         parsed.id === identity,
       subscription: () => ({
-        identity: "BTC",
-        subscribe: () => "subscribe:price:BTC",
-        unsubscribe: () => "unsubscribe:price:BTC",
+        identity: "resource-1",
+        subscribe: () => "subscribe:update:resource-1",
+        unsubscribe: () => "unsubscribe:update:resource-1",
       }),
     })
     const statusProtocol = defineProtocol({
@@ -567,9 +567,9 @@ describe("订阅管理器", () => {
         "id" in parsed &&
         parsed.id === identity,
       subscription: () => ({
-        identity: "BTC",
-        subscribe: () => "subscribe:status:BTC",
-        unsubscribe: () => "unsubscribe:status:BTC",
+        identity: "resource-1",
+        subscribe: () => "subscribe:status:resource-1",
+        unsubscribe: () => "unsubscribe:status:resource-1",
       }),
     })
 
@@ -578,42 +578,42 @@ describe("订阅管理器", () => {
         const manager = yield* makeConnectedManager((control) =>
           Effect.sync(() => controls.push(control)),
         )
-        const priceScope = yield* Scope.make()
+        const updateScope = yield* Scope.make()
         const statusScope = yield* Scope.make()
-        const priceMessage = yield* Deferred.make<number>()
+        const updateMessage = yield* Deferred.make<number>()
         const statusMessage = yield* Deferred.make<string>()
 
-        const priceConsumer = yield* Stream.runForEach(
-          manager.stream("priceUpdated", priceProtocol, priceProtocol.subscription()),
-          (message) => Deferred.succeed(priceMessage, message),
-        ).pipe(Effect.forkIn(priceScope))
+        const updateConsumer = yield* Stream.runForEach(
+          manager.stream("resourceUpdated", updateProtocol, updateProtocol.subscription()),
+          (message) => Deferred.succeed(updateMessage, message),
+        ).pipe(Effect.forkIn(updateScope))
         const statusConsumer = yield* Stream.runForEach(
           manager.stream("statusChanged", statusProtocol, statusProtocol.subscription()),
           (message) => Deferred.succeed(statusMessage, message),
         ).pipe(Effect.forkIn(statusScope))
-        yield* Effect.all([Fiber.status(priceConsumer), Fiber.status(statusConsumer)], {
+        yield* Effect.all([Fiber.status(updateConsumer), Fiber.status(statusConsumer)], {
           concurrency: "unbounded",
         }).pipe(
           Effect.filterOrFail((statuses) => statuses.every(FiberStatus.isSuspended)),
           Effect.eventually,
         )
 
-        expect(controls).toEqual(["subscribe:price:BTC", "subscribe:status:BTC"])
+        expect(controls).toEqual(["subscribe:update:resource-1", "subscribe:status:resource-1"])
 
-        yield* publishMatched(manager, { type: "price", id: "BTC" }, 101)
-        expect(yield* Deferred.await(priceMessage)).toBe(101)
+        yield* publishMatched(manager, { type: "update", id: "resource-1" }, 101)
+        expect(yield* Deferred.await(updateMessage)).toBe(101)
         expect(Option.isNone(yield* Deferred.poll(statusMessage))).toBe(true)
 
-        yield* publishMatched(manager, { type: "status", id: "BTC" }, "active")
+        yield* publishMatched(manager, { type: "status", id: "resource-1" }, "active")
         expect(yield* Deferred.await(statusMessage)).toBe("active")
 
-        yield* Scope.close(priceScope, Exit.void)
+        yield* Scope.close(updateScope, Exit.void)
         yield* Scope.close(statusScope, Exit.void)
         expect(controls).toEqual([
-          "subscribe:price:BTC",
-          "subscribe:status:BTC",
-          "unsubscribe:price:BTC",
-          "unsubscribe:status:BTC",
+          "subscribe:update:resource-1",
+          "subscribe:status:resource-1",
+          "unsubscribe:update:resource-1",
+          "unsubscribe:status:resource-1",
         ])
       }),
     )
@@ -661,12 +661,12 @@ describe("订阅管理器", () => {
           const secondMessage = yield* Deferred.make<number>()
 
           yield* Stream.runDrain(
-            manager.stream("priceUpdated", protocol, protocol.subscription("A")),
+            manager.stream("resourceUpdated", protocol, protocol.subscription("A")),
           ).pipe(Effect.forkIn(firstScope))
           yield* Deferred.await(firstWriteStarted)
 
           const second = yield* Stream.runForEach(
-            manager.stream("priceUpdated", protocol, protocol.subscription("B")),
+            manager.stream("resourceUpdated", protocol, protocol.subscription("B")),
             (message) => Deferred.succeed(secondMessage, message),
           ).pipe(Effect.forkIn(secondScope))
           yield* Fiber.status(second).pipe(

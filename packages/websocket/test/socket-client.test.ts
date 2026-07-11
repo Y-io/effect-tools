@@ -17,21 +17,21 @@ import { defineProtocol, defineProtocolCatalog, makeSocketClient } from "../src/
 import { makeControllableSocket } from "./support/controllable-websocket-connection"
 
 const catalog = defineProtocolCatalog({
-  prices: defineProtocol({
+  updates: defineProtocol({
     schema: Schema.Struct({
-      type: Schema.Literal("price"),
-      symbol: Schema.String,
+      type: Schema.Literal("update"),
+      resourceId: Schema.String,
       value: Schema.Number,
     }),
     match: (parsed: unknown, identity: string) =>
       typeof parsed === "object" &&
       parsed !== null &&
-      "symbol" in parsed &&
-      parsed.symbol === identity,
-    subscription: (symbol: string) => ({
-      identity: symbol,
-      subscribe: () => `subscribe:${symbol}`,
-      unsubscribe: () => `unsubscribe:${symbol}`,
+      "resourceId" in parsed &&
+      parsed.resourceId === identity,
+    subscription: (resourceId: string) => ({
+      identity: resourceId,
+      subscribe: () => `subscribe:${resourceId}`,
+      unsubscribe: () => `unsubscribe:${resourceId}`,
     }),
   }),
 })
@@ -50,35 +50,39 @@ describe("Socket Client", () => {
           })
           const consumerScope = yield* Scope.make()
           const message = yield* Deferred.make<{
-            readonly type: "price"
-            readonly symbol: string
+            readonly type: "update"
+            readonly resourceId: string
             readonly value: number
           }>()
 
-          const consumer = yield* Stream.runForEach(client.prices.stream("BTC"), (value) =>
+          const consumer = yield* Stream.runForEach(client.updates.stream("resource-1"), (value) =>
             Deferred.succeed(message, value),
           ).pipe(Effect.forkIn(consumerScope))
 
-          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
 
           yield* control.emitFrame("not-json")
-          yield* control.emitFrame(JSON.stringify({ symbol: "ETH", value: 1 }))
-          yield* control.emitFrame(JSON.stringify({ type: "price", symbol: "BTC", value: "bad" }))
-          yield* control.emitFrame(JSON.stringify({ type: "price", symbol: "BTC", value: 101 }))
+          yield* control.emitFrame(JSON.stringify({ resourceId: "resource-2", value: 1 }))
+          yield* control.emitFrame(
+            JSON.stringify({ type: "update", resourceId: "resource-1", value: "bad" }),
+          )
+          yield* control.emitFrame(
+            JSON.stringify({ type: "update", resourceId: "resource-1", value: 101 }),
+          )
 
           expect(yield* Deferred.await(message)).toEqual({
-            type: "price",
-            symbol: "BTC",
+            type: "update",
+            resourceId: "resource-1",
             value: 101,
           })
 
           yield* Fiber.interrupt(consumer)
-          expect(yield* control.takeSent).toBe("unsubscribe:BTC")
+          expect(yield* control.takeSent).toBe("unsubscribe:resource-1")
           yield* Scope.close(consumerScope, Exit.void)
 
           const verifyTypes = () => {
             // @ts-expect-error stream 参数来自 subscription factory
-            void client.prices.stream(42)
+            void client.updates.stream(42)
           }
           expect(verifyTypes).toBeTypeOf("function")
         }),
@@ -97,11 +101,11 @@ describe("Socket Client", () => {
             socket: control.socket,
             parser: JSON.parse,
           })
-          const consumer = yield* Stream.runDrain(client.prices.stream("BTC")).pipe(
+          const consumer = yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
             Effect.forkScoped,
           )
 
-          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
           yield* control.disconnect(1006, "lost")
           yield* control.runReleased
           yield* TestClock.sleeps().pipe(
@@ -117,7 +121,7 @@ describe("Socket Client", () => {
             Effect.filterOrFail(Option.isSome),
             Effect.eventually,
           )
-          expect(restored.value).toBe("subscribe:BTC")
+          expect(restored.value).toBe("subscribe:resource-1")
 
           yield* Fiber.interrupt(consumer)
         }),
@@ -143,7 +147,7 @@ describe("Socket Client", () => {
             }),
           )
 
-          const consumer = yield* Stream.runDrain(client.prices.stream("BTC")).pipe(
+          const consumer = yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
             Effect.forkScoped,
           )
           yield* control.closeCount.pipe(
@@ -160,7 +164,7 @@ describe("Socket Client", () => {
             Effect.filterOrFail(Option.isSome),
             Effect.eventually,
           )
-          expect(restored.value).toBe("subscribe:BTC")
+          expect(restored.value).toBe("subscribe:resource-1")
           yield* Fiber.interrupt(consumer)
         }),
       ).pipe(Effect.provide(TestContext.TestContext)),
@@ -178,11 +182,11 @@ describe("Socket Client", () => {
             socket: control.socket,
             parser: JSON.parse,
           })
-          const consumer = yield* Stream.runDrain(client.prices.stream("BTC")).pipe(
+          const consumer = yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
             Effect.forkScoped,
           )
 
-          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
           yield* control.disconnect(1006, "lost")
           yield* control.runReleased
           yield* TestClock.sleeps().pipe(
@@ -214,8 +218,10 @@ describe("Socket Client", () => {
             socket: control.socket,
             parser: JSON.parse,
           }).pipe(Scope.extend(clientScope))
-          yield* Stream.runDrain(client.prices.stream("BTC")).pipe(Effect.forkIn(clientScope))
-          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
+            Effect.forkIn(clientScope),
+          )
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
 
           yield* Scope.close(clientScope, Exit.void)
           expect(yield* control.closeCount).toBe(1)
@@ -240,34 +246,36 @@ describe("Socket Client", () => {
           })
           const firstScope = yield* Scope.make()
           const secondScope = yield* Scope.make()
-          const ethScope = yield* Scope.make()
+          const secondResourceScope = yield* Scope.make()
           const first = yield* Deferred.make<number>()
           const second = yield* Deferred.make<number>()
-          const eth = yield* Deferred.make<number>()
+          const secondResource = yield* Deferred.make<number>()
 
-          yield* Stream.runForEach(client.prices.stream("BTC"), (message) =>
+          yield* Stream.runForEach(client.updates.stream("resource-1"), (message) =>
             Deferred.succeed(first, message.value),
           ).pipe(Effect.forkIn(firstScope))
-          yield* Stream.runForEach(client.prices.stream("BTC"), (message) =>
+          yield* Stream.runForEach(client.updates.stream("resource-1"), (message) =>
             Deferred.succeed(second, message.value),
           ).pipe(Effect.forkIn(secondScope))
-          yield* Stream.runForEach(client.prices.stream("ETH"), (message) =>
-            Deferred.succeed(eth, message.value),
-          ).pipe(Effect.forkIn(ethScope))
+          yield* Stream.runForEach(client.updates.stream("resource-2"), (message) =>
+            Deferred.succeed(secondResource, message.value),
+          ).pipe(Effect.forkIn(secondResourceScope))
 
-          expect(yield* control.takeSent).toBe("subscribe:BTC")
-          expect(yield* control.takeSent).toBe("subscribe:ETH")
-          yield* control.emitFrame(JSON.stringify({ type: "price", symbol: "BTC", value: 101 }))
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
+          expect(yield* control.takeSent).toBe("subscribe:resource-2")
+          yield* control.emitFrame(
+            JSON.stringify({ type: "update", resourceId: "resource-1", value: 101 }),
+          )
           expect(yield* Deferred.await(first)).toBe(101)
           expect(yield* Deferred.await(second)).toBe(101)
-          expect(Option.isNone(yield* Deferred.poll(eth))).toBe(true)
+          expect(Option.isNone(yield* Deferred.poll(secondResource))).toBe(true)
 
           yield* Scope.close(firstScope, Exit.void)
           expect(Option.isNone(yield* control.pollSent)).toBe(true)
           yield* Scope.close(secondScope, Exit.void)
-          expect(yield* control.takeSent).toBe("unsubscribe:BTC")
-          yield* Scope.close(ethScope, Exit.void)
-          expect(yield* control.takeSent).toBe("unsubscribe:ETH")
+          expect(yield* control.takeSent).toBe("unsubscribe:resource-1")
+          yield* Scope.close(secondResourceScope, Exit.void)
+          expect(yield* control.takeSent).toBe("unsubscribe:resource-2")
         }),
       ),
     )
@@ -325,7 +333,7 @@ describe("Socket Client", () => {
           const control = yield* makeControllableSocket()
           yield* control.open
           yield* control.replyToNextSend(
-            JSON.stringify({ type: "price", symbol: "BTC", value: 101 }),
+            JSON.stringify({ type: "update", resourceId: "resource-1", value: 101 }),
           )
           const client = yield* makeSocketClient({
             catalog,
@@ -333,11 +341,11 @@ describe("Socket Client", () => {
             parser: JSON.parse,
           })
 
-          expect(yield* Stream.runHead(client.prices.stream("BTC"))).toEqual(
-            Option.some({ type: "price", symbol: "BTC", value: 101 }),
+          expect(yield* Stream.runHead(client.updates.stream("resource-1"))).toEqual(
+            Option.some({ type: "update", resourceId: "resource-1", value: 101 }),
           )
-          expect(yield* control.takeSent).toBe("subscribe:BTC")
-          expect(yield* control.takeSent).toBe("unsubscribe:BTC")
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
+          expect(yield* control.takeSent).toBe("unsubscribe:resource-1")
         }),
       ),
     )
@@ -346,13 +354,13 @@ describe("Socket Client", () => {
   test("被动订阅保持 latest-value 且新消费者不接收历史值", async () => {
     const matched: Array<unknown> = []
     const passiveCatalog = defineProtocolCatalog({
-      prices: defineProtocol({
+      updates: defineProtocol({
         schema: Schema.Number,
         match: (parsed: unknown, identity: string) => {
           matched.push(parsed)
-          return identity === "prices"
+          return identity === "updates"
         },
-        subscription: () => ({ identity: "prices" }),
+        subscription: () => ({ identity: "updates" }),
       }),
     })
 
@@ -375,7 +383,7 @@ describe("Socket Client", () => {
             Effect.eventually,
           )
 
-          yield* Stream.runForEach(client.prices.stream(), (value) =>
+          yield* Stream.runForEach(client.updates.stream(), (value) =>
             Effect.gen(function* () {
               if (value === 0) {
                 yield* Deferred.succeed(firstReady, undefined)
@@ -407,7 +415,7 @@ describe("Socket Client", () => {
           )
           expect(values).toEqual([1, 3])
 
-          const historical = yield* client.prices
+          const historical = yield* client.updates
             .stream()
             .pipe(Stream.timeout("1 second"), Stream.runHead, Effect.fork)
           yield* TestClock.sleeps().pipe(
@@ -437,17 +445,18 @@ describe("Socket Client", () => {
           })
           const consumers = yield* Effect.forEach(
             scopes,
-            (scope) => Stream.runDrain(client.prices.stream("BTC")).pipe(Effect.forkIn(scope)),
+            (scope) =>
+              Stream.runDrain(client.updates.stream("resource-1")).pipe(Effect.forkIn(scope)),
             { concurrency: "unbounded" },
           )
 
-          expect(yield* control.takeSent).toBe("subscribe:BTC")
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
           expect(Option.isNone(yield* control.pollSent)).toBe(true)
           yield* Effect.forEach(consumers, Fiber.interrupt, {
             concurrency: "unbounded",
             discard: true,
           })
-          expect(yield* control.takeSent).toBe("unsubscribe:BTC")
+          expect(yield* control.takeSent).toBe("unsubscribe:resource-1")
           expect(Option.isNone(yield* control.pollSent)).toBe(true)
         }),
       ),
