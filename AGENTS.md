@@ -6,6 +6,43 @@
 
 使用 Bun 作为运行时、包管理器和脚本执行器。
 
+## Effect-first 实现原则
+
+本仓库优先使用 Effect v3 表达副作用、并发、错误、资源生命周期与领域集合。目标是让取消、失败、资源释放和测试时钟保持可组合、可推理；不是给纯同步计算机械包裹 `Effect`。
+
+### 副作用与异步边界
+
+- I/O、异步操作、可恢复失败、重试、超时、资源申请与释放必须进入 `Effect`。
+- 业务实现不要直接组合原生 `Promise`。第三方 Promise API 应隔离在 adapter 边界，并通过 `Effect.tryPromise` 等 API 转换。
+- 外部不可信输入优先使用 `Schema` 解码；预期内的业务失败使用 Effect error channel，不以抛异常表达。
+
+### 并发、通信与状态
+
+- Fiber 间 FIFO 通信使用 `Queue`，广播使用 `PubSub`，一次性协调使用 `Deferred`，并发限制使用 Effect `Semaphore`。
+- 并发共享状态优先使用 `Ref`、`SynchronizedRef` 或 `SubscriptionRef`；不要手写锁、waiter、listener 或用普通数组模拟队列。
+- 领域映射与集合优先使用 Effect 的不可变 `HashMap`、`HashSet`；需要并发更新时，将不可变集合放入合适的 Effect Ref 中。
+- `MutableHashMap`、`MutableHashSet` 仅用于模块内部、明确受控的可变热路径，不能替代并发状态原语。
+- 原生 `Map`、`Set` 只用于局部、同步、短生命周期且不跨 Fiber 共享的实现细节。若用于长期领域状态、服务索引或跨 Effect 操作保留的状态，应优先改用 `HashMap`、`HashSet` 或 Effect Ref；确需保留原生集合时说明理由。
+
+### 生命周期、时间与流
+
+- 资源使用 `Scope`、`Effect.acquireRelease` 或 `Layer` 管理，后台 Fiber 优先使用 `Effect.forkScoped`。
+- 禁止无归属的永久 Fiber；`forkDaemon` 只用于明确的进程级生命周期，并需说明理由。
+- 时间、超时和重试使用 `Clock`、`Effect.sleep`、`Schedule`；测试使用 `TestClock`，不要依赖真实等待。
+- 连续或增量数据优先使用 `Stream`、`Sink`、`Channel`，不要手写回调广播、Promise 消费循环或 async iterator 来替代已有 Effect 抽象。
+
+### 原生代码的允许范围
+
+- 纯同步计算、局部临时值、第三方 API adapter 和有证据支持的性能热点可以使用原生语言能力。
+- 原生结构不能承担 Fiber 通信、背压、取消、资源生命周期或并发共享状态。
+- 当 Effect 已有合适原语但仍选择原生 Promise、timer、event emitter、集合或手写并发结构时，需在代码或设计文档中记录原因，并测试取消、失败与资源释放行为。
+
+### 实现与审查
+
+- 设计或实现前先识别 Effect 已有的服务、数据类型和并发原语；按下文要求优先查阅 vendored Effect 源码与测试。
+- Code review 必须检查手写异步、队列、广播、锁、timer、重试、可变集合和资源管理是否可由 Effect 原语替代。
+- 测试优先通过公开 Effect seam、真实 `Scope`、可控服务与 `TestClock` 验证行为，不断言内部 Ref、Queue、PubSub 或 Fiber。
+
 ## 外部源码参考
 
 `repos/effect/` 通过 Git subtree 引入 `Effect-TS/effect` 的 Effect v3 源码，版本必须与项目实际安装的 `effect` 版本保持一致。
