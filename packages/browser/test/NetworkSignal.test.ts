@@ -4,12 +4,14 @@ import { NetworkSignal, NetworkSignalLive } from "../src/NetworkSignal"
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator")
 
 const installBrowser = (onLine: boolean) => {
+  const browserNavigator = { onLine }
   const browserWindow = new EventTarget() as EventTarget & {
     readonly navigator: { onLine: boolean }
   }
-  Object.defineProperty(browserWindow, "navigator", { value: { onLine } })
+  Object.defineProperty(browserWindow, "navigator", { value: browserNavigator })
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: browserWindow,
@@ -17,6 +19,10 @@ const installBrowser = (onLine: boolean) => {
   Object.defineProperty(globalThis, "document", {
     configurable: true,
     value: new EventTarget(),
+  })
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: browserNavigator,
   })
   return {
     dispatch(isOnline: boolean) {
@@ -36,6 +42,11 @@ afterEach(() => {
     Reflect.deleteProperty(globalThis, "document")
   } else {
     Object.defineProperty(globalThis, "document", originalDocument)
+  }
+  if (originalNavigator === undefined) {
+    Reflect.deleteProperty(globalThis, "navigator")
+  } else {
+    Object.defineProperty(globalThis, "navigator", originalNavigator)
   }
 })
 

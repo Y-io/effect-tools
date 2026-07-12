@@ -4,6 +4,7 @@ import { PageVisibilitySignal, PageVisibilitySignalLive } from "../src/PageVisib
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator")
 
 const installDocument = (visibilityState: DocumentVisibilityState) => {
   const browserDocument = new EventTarget() as EventTarget & {
@@ -17,6 +18,10 @@ const installDocument = (visibilityState: DocumentVisibilityState) => {
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: new EventTarget(),
+  })
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {},
   })
   return {
     dispatch(nextVisibilityState: DocumentVisibilityState) {
@@ -36,6 +41,11 @@ afterEach(() => {
     Reflect.deleteProperty(globalThis, "window")
   } else {
     Object.defineProperty(globalThis, "window", originalWindow)
+  }
+  if (originalNavigator === undefined) {
+    Reflect.deleteProperty(globalThis, "navigator")
+  } else {
+    Object.defineProperty(globalThis, "navigator", originalNavigator)
   }
 })
 
