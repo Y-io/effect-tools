@@ -9,7 +9,7 @@ export const NetworkSignalLive = Layer.scoped(
   NetworkSignal,
   Effect.gen(function* () {
     const initial = yield* Effect.sync(() => {
-      const browser = requireBrowserEnvironment("NetworkSignal", "window", "navigator")
+      const browser = requireBrowserEnvironment("NetworkSignal", "window")
       return browser.window.navigator.onLine
     })
     return yield* makeBooleanSignal(initial, (emit) => {

@@ -116,8 +116,11 @@ describe("页面可见信号", () => {
     expect(values).toEqual([false, true])
   })
 
-  test("非浏览器 runtime 构造时以 defect 失败", async () => {
-    Reflect.deleteProperty(globalThis, "document")
+  test("document 为 undefined 时以浏览器环境 defect 失败", async () => {
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: undefined,
+    })
 
     const exit = await Effect.runPromiseExit(
       Effect.void.pipe(Effect.provide(PageVisibilitySignalLive)),
