@@ -3,11 +3,13 @@ import {
   HttpApiEndpoint,
   HttpApiError,
   HttpApiGroup,
+  HttpApiClient,
+  HttpClient,
   HttpClientError,
   HttpClientRequest,
 } from "@effect/platform"
 import { Context, Data, Effect, ParseResult, Schema } from "effect"
-import { make, makeRequestProvider, makeResponseProvider } from "../src/index"
+import { makeRequestProvider, makeResponseProvider } from "../src/index"
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
@@ -46,9 +48,12 @@ const responseProvider = makeResponseProvider(() =>
   }),
 )
 
-const clientEffect = make(api, {
-  requestProviders: [requestProvider],
-  responseProviders: [responseProvider],
+declare const baseClient: HttpClient.HttpClient
+const clientEffect = HttpApiClient.makeWith(api, {
+  httpClient: baseClient.pipe(
+    HttpClient.mapRequestEffect(requestProvider),
+    HttpClient.tap(responseProvider),
+  ),
 })
 
 type Client = Effect.Effect.Success<typeof clientEffect>

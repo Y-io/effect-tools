@@ -1,6 +1,6 @@
 # HttpApiClient
 
-为基于 `HttpApi` 生成的类型化客户端组合 Runtime 级请求变换与原始响应观察，同时保持具体业务协议与状态的归属边界。
+为基于 `HttpApi` 生成的类型化客户端定义 Runtime 级请求变换与原始响应观察，同时保持具体业务协议与状态的归属边界。
 
 ## Language
 

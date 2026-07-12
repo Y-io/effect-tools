@@ -3,12 +3,13 @@ import {
   HttpApi,
   HttpApiEndpoint,
   HttpApiGroup,
+  HttpApiClient,
   HttpClient,
   HttpClientRequest,
   HttpClientResponse,
 } from "@effect/platform"
 import { Context, Effect, Ref, Schema } from "effect"
-import { make, makeHeadersProvider, makeRequestProvider, makeResponseProvider } from "../src/index"
+import { makeHeadersProvider, makeRequestProvider, makeResponseProvider } from "../src/index"
 
 class CurrentHeader extends Context.Tag("test/CurrentHeader")<CurrentHeader, string>() {}
 
@@ -89,15 +90,17 @@ describe("HttpApiClient", () => {
     )
     const secondResponse = makeResponseProvider(() => appendEvent("response:second"))
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const client = yield* make(api, {
-          requestProviders: [firstRequest, secondRequest],
-          responseProviders: [firstResponse, secondResponse],
-        })
-        return yield* client.test.getValue({})
-      }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient)),
+    const client = await Effect.runPromise(
+      HttpApiClient.makeWith(api, {
+        httpClient: httpClient.pipe(
+          HttpClient.mapRequestEffect(firstRequest),
+          HttpClient.mapRequestEffect(secondRequest),
+          HttpClient.tap(firstResponse),
+          HttpClient.tap(secondResponse),
+        ),
+      }),
     )
+    const result = await Effect.runPromise(client.test.getValue({}))
 
     expect(result).toEqual({ value: "decoded-value" })
     expect(Ref.get(events).pipe(Effect.runSync)).toEqual([
@@ -130,19 +133,19 @@ describe("HttpApiClient", () => {
       ),
     )
 
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const client = yield* make(api, {
-          requestProviders: [
+    const client = await Effect.runPromise(
+      HttpApiClient.makeWith(api, {
+        httpClient: httpClient.pipe(
+          HttpClient.mapRequestEffect(
             makeRequestProvider((request) =>
               Effect.succeed(request.pipe(HttpClientRequest.prependUrl("https://example.test"))),
             ),
-          ],
-          responseProviders: [makeResponseProvider(() => Ref.set(observed, true))],
-        })
-        yield* client.test.getValue({})
-      }).pipe(Effect.flip, Effect.provideService(HttpClient.HttpClient, httpClient)),
+          ),
+          HttpClient.tap(makeResponseProvider(() => Ref.set(observed, true))),
+        ),
+      }),
     )
+    await Effect.runPromise(client.test.getValue({}).pipe(Effect.flip))
 
     expect(Ref.get(observed).pipe(Effect.runSync)).toBe(true)
   })
