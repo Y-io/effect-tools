@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
-import { NetworkSignal, NetworkSignalLive } from "../src/network-signal"
+import { NetworkSignal, NetworkSignalLive } from "../src/NetworkSignal"
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 
