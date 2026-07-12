@@ -64,24 +64,25 @@ export const make = <
 ) =>
   Effect.gen(function* () {
     const baseClient = yield* HttpClient.HttpClient
-    const requestProvider: RequestProvider<
-      ProviderError<RequestProviders[number]>,
-      ProviderContext<RequestProviders[number]>
-    > = (request) =>
-      Effect.reduce(options.requestProviders, request, (currentRequest, provider) =>
-        provider(currentRequest),
-      )
-    const responseProvider: ResponseProvider<
-      ProviderError<ResponseProviders[number]>,
-      ProviderContext<ResponseProviders[number]>
-    > = (response) =>
-      Effect.forEach(options.responseProviders, (provider) => provider(response), {
-        concurrency: 1,
-        discard: true,
-      })
     const client = baseClient.pipe(
-      HttpClient.mapRequestEffect(requestProvider),
-      HttpClient.tap(responseProvider),
+      HttpClient.mapRequestEffect<
+        ProviderError<RequestProviders[number]>,
+        ProviderContext<RequestProviders[number]>
+      >((request) =>
+        Effect.reduce(options.requestProviders, request, (currentRequest, provider) =>
+          provider(currentRequest),
+        ),
+      ),
+      HttpClient.tap<
+        void,
+        ProviderError<ResponseProviders[number]>,
+        ProviderContext<ResponseProviders[number]>
+      >((response) =>
+        Effect.forEach(options.responseProviders, (provider) => provider(response), {
+          concurrency: 1,
+          discard: true,
+        }),
+      ),
     )
     return yield* HttpApiClient.makeWith(api, { httpClient: client })
   })
