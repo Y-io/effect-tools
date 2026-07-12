@@ -16,14 +16,14 @@ export type RequestProvider<E, R> = (
 export const makeRequestProvider = <E, R>(provider: RequestProvider<E, R>): RequestProvider<E, R> =>
   provider
 
-export const makeHeadersProvider = <E, R>(
-  provide: (request: HttpClientRequest.HttpClientRequest) => Effect.Effect<Headers.Input, E, R>,
-): RequestProvider<E, R> =>
-  makeRequestProvider((request) =>
+export const makeHeadersProvider =
+  <E, R>(
+    provide: (request: HttpClientRequest.HttpClientRequest) => Effect.Effect<Headers.Input, E, R>,
+  ): RequestProvider<E, R> =>
+  (request) =>
     provide(request).pipe(
       Effect.map((headers) => request.pipe(HttpClientRequest.setHeaders(headers))),
-    ),
-  )
+    )
 
 export type ResponseProvider<E, R> = (
   response: HttpClientResponse.HttpClientResponse,
@@ -79,7 +79,6 @@ export const make = <
         ProviderContext<ResponseProviders[number]>
       >((response) =>
         Effect.forEach(options.responseProviders, (provider) => provider(response), {
-          concurrency: 1,
           discard: true,
         }),
       ),

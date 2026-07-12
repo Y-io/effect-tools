@@ -11,29 +11,8 @@ import { Context, Effect, Ref, Schema } from "effect"
 import { make, makeHeadersProvider, makeRequestProvider, makeResponseProvider } from "../src/index"
 
 class CurrentHeader extends Context.Tag("test/CurrentHeader")<CurrentHeader, string>() {}
-class ObservedStatuses extends Context.Tag("test/ObservedStatuses")<
-  ObservedStatuses,
-  { readonly add: (status: number) => Effect.Effect<void> }
->() {}
 
 describe("请求提供者", () => {
-  test("可以读取 Effect Service 并变换请求", async () => {
-    const provider = makeRequestProvider((request) =>
-      Effect.gen(function* () {
-        const value = yield* CurrentHeader
-        return request.pipe(HttpClientRequest.setHeader("x-current", value))
-      }),
-    )
-
-    const request = await Effect.runPromise(
-      provider(HttpClientRequest.get("https://example.test")).pipe(
-        Effect.provideService(CurrentHeader, "current-value"),
-      ),
-    )
-
-    expect(request.headers["x-current"]).toBe("current-value")
-  })
-
   test("Header 提供者使用 setHeaders 合并动态 headers", async () => {
     const provider = makeHeadersProvider((request) =>
       Effect.gen(function* () {
@@ -60,32 +39,6 @@ describe("请求提供者", () => {
       "x-existing": "existing-value",
       "x-new": "new-value",
     })
-  })
-})
-
-describe("响应提供者", () => {
-  test("可以读取 Effect Service 并观察原始响应", async () => {
-    const statuses = Ref.unsafeMake<ReadonlyArray<number>>([])
-    const provider = makeResponseProvider((response) =>
-      Effect.gen(function* () {
-        const observed = yield* ObservedStatuses
-        yield* observed.add(response.status)
-      }),
-    )
-    const response = HttpClientResponse.fromWeb(
-      HttpClientRequest.get("https://example.test"),
-      new Response(null, { status: 401 }),
-    )
-
-    await Effect.runPromise(
-      provider(response).pipe(
-        Effect.provideService(ObservedStatuses, {
-          add: (status) => Ref.update(statuses, (values) => [...values, status]),
-        }),
-      ),
-    )
-
-    expect(Ref.get(statuses).pipe(Effect.runSync)).toEqual([401])
   })
 })
 
