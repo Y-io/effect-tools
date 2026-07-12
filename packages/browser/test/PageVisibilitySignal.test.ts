@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Ref, Scope, Stream } from "effect"
 import {
   makePageVisibilitySignalLive,
   PageVisibilitySignal,
@@ -170,22 +170,47 @@ describe("页面可见信号", () => {
   })
 
   test("读取浏览器状态失败时记录错误并使用默认值", async () => {
-    installDocument("visible")
+    const browserDocument = installDocument("visible")
+    let state: DocumentVisibilityState = "visible"
+    let reads = 0
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get() {
-        throw new Error("visibility state unavailable")
+        if (reads++ === 0) {
+          throw new Error("visibility state unavailable")
+        }
+        return state
+      },
+      set(value: DocumentVisibilityState) {
+        state = value
       },
     })
+    const logs: Array<{ readonly level: string; readonly message: string }> = []
+    const logger = Logger.make(({ logLevel, message }) => {
+      logs.push({
+        level: logLevel.label,
+        message: Array.isArray(message) ? message.map(String).join(" ") : String(message),
+      })
+    })
 
-    const isVisible = await Effect.runPromise(
-      Effect.gen(function* () {
-        const visibility = yield* PageVisibilitySignal
-        return yield* visibility.get
-      }).pipe(Effect.provide(makePageVisibilitySignalLive(false))),
+    const values = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const visibility = yield* PageVisibilitySignal
+          const initial = yield* visibility.get
+          browserDocument.dispatch("visible")
+          const recovered = yield* visibility.get
+          return [initial, recovered] as const
+        }).pipe(Effect.provide(makePageVisibilitySignalLive(false))),
+      ).pipe(Effect.provide(Logger.replace(Logger.defaultLogger, logger))),
     )
 
-    expect(isVisible).toBe(false)
+    expect(values).toEqual([false, true])
+    expect(logs).toHaveLength(1)
+    expect(logs[0]?.level).toBe("ERROR")
+    expect(logs[0]?.message).toContain(
+      "PageVisibilitySignal failed to read browser value; defaulting to false",
+    )
   })
 
   test("Scope 关闭后停止响应页面可见性事件", async () => {
