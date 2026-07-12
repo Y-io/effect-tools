@@ -1,4 +1,6 @@
-import { Context, Effect, Layer, PubSub, Ref, Runtime, Stream, Subscribable } from "effect"
+import { Context, Effect, Layer } from "effect"
+import type { Subscribable } from "effect"
+import { makeBooleanSignal } from "./internal/makeBooleanSignal"
 
 export const NetworkSignal = Context.GenericTag<Subscribable.Subscribable<boolean>>("NetworkSignal")
 
@@ -11,39 +13,20 @@ export const NetworkSignalLive = Layer.scoped(
       }
       return window.navigator.onLine
     })
-    const current = yield* Ref.make(initial)
-    const updates = yield* PubSub.sliding<boolean>({ capacity: 1, replay: 1 })
-    yield* PubSub.publish(updates, initial)
-    yield* Effect.addFinalizer(() => PubSub.shutdown(updates))
-    const runtime = yield* Effect.runtime<never>()
-
-    const publish = (value: boolean) =>
-      Ref.modify(current, (previous) =>
-        previous === value ? ([false, previous] as const) : ([true, value] as const),
-      ).pipe(
-        Effect.flatMap((changed) =>
-          changed ? PubSub.publish(updates, value) : Effect.succeed(false),
-        ),
-        Effect.asVoid,
-      )
-    const online = () => Runtime.runSync(runtime)(publish(true))
-    const offline = () => Runtime.runSync(runtime)(publish(false))
-
-    yield* Effect.acquireRelease(
-      Effect.sync(() => {
-        window.addEventListener("online", online)
-        window.addEventListener("offline", offline)
-      }),
-      () =>
+    return yield* makeBooleanSignal(initial, (emit) => {
+      const online = () => emit(true)
+      const offline = () => emit(false)
+      return Effect.acquireRelease(
         Effect.sync(() => {
-          window.removeEventListener("online", online)
-          window.removeEventListener("offline", offline)
+          window.addEventListener("online", online)
+          window.addEventListener("offline", offline)
         }),
-    )
-
-    return Subscribable.make({
-      get: Ref.get(current),
-      changes: Stream.fromPubSub(updates),
+        () =>
+          Effect.sync(() => {
+            window.removeEventListener("online", online)
+            window.removeEventListener("offline", offline)
+          }),
+      )
     })
   }),
 )
