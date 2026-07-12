@@ -48,35 +48,6 @@ type ProviderContext<Provider> = Provider extends (
   ? R
   : never
 
-const applyRequestProviders = <E, R, const Providers extends ReadonlyArray<AnyRequestProvider>>(
-  client: HttpClient.HttpClient.With<E, R>,
-  providers: Providers,
-): HttpClient.HttpClient.With<
-  E | ProviderError<Providers[number]>,
-  R | ProviderContext<Providers[number]>
-> =>
-  client.pipe(
-    HttpClient.mapRequestEffect((request) =>
-      Effect.reduce(providers, request, (currentRequest, provider) => provider(currentRequest)),
-    ),
-  )
-
-const applyResponseProviders = <E, R, const Providers extends ReadonlyArray<AnyResponseProvider>>(
-  client: HttpClient.HttpClient.With<E, R>,
-  providers: Providers,
-): HttpClient.HttpClient.With<
-  E | ProviderError<Providers[number]>,
-  R | ProviderContext<Providers[number]>
-> =>
-  client.pipe(
-    HttpClient.tap((response) =>
-      Effect.forEach(providers, (provider) => provider(response), {
-        concurrency: 1,
-        discard: true,
-      }),
-    ),
-  )
-
 export const make = <
   ApiId extends string,
   Groups extends HttpApiGroup.HttpApiGroup.Any,
@@ -93,9 +64,24 @@ export const make = <
 ) =>
   Effect.gen(function* () {
     const baseClient = yield* HttpClient.HttpClient
-    const client = applyResponseProviders(
-      applyRequestProviders(baseClient, options.requestProviders),
-      options.responseProviders,
+    const requestProvider: RequestProvider<
+      ProviderError<RequestProviders[number]>,
+      ProviderContext<RequestProviders[number]>
+    > = (request) =>
+      Effect.reduce(options.requestProviders, request, (currentRequest, provider) =>
+        provider(currentRequest),
+      )
+    const responseProvider: ResponseProvider<
+      ProviderError<ResponseProviders[number]>,
+      ProviderContext<ResponseProviders[number]>
+    > = (response) =>
+      Effect.forEach(options.responseProviders, (provider) => provider(response), {
+        concurrency: 1,
+        discard: true,
+      })
+    const client = baseClient.pipe(
+      HttpClient.mapRequestEffect(requestProvider),
+      HttpClient.tap(responseProvider),
     )
     return yield* HttpApiClient.makeWith(api, { httpClient: client })
   })
