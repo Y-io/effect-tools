@@ -28,5 +28,3 @@ export const makePageVisibilitySignalLive = (defaultValue = true) =>
       })
     }),
   )
-
-export const PageVisibilitySignalLive = makePageVisibilitySignalLive()

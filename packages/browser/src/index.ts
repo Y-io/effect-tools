@@ -1,6 +1,2 @@
-export { makeNetworkSignalLive, NetworkSignal, NetworkSignalLive } from "./NetworkSignal"
-export {
-  makePageVisibilitySignalLive,
-  PageVisibilitySignal,
-  PageVisibilitySignalLive,
-} from "./PageVisibilitySignal"
+export { makeNetworkSignalLive, NetworkSignal } from "./NetworkSignal"
+export { makePageVisibilitySignalLive, PageVisibilitySignal } from "./PageVisibilitySignal"

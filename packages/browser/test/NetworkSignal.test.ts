@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
-import { makeNetworkSignalLive, NetworkSignal, NetworkSignalLive } from "../src/NetworkSignal"
+import { makeNetworkSignalLive, NetworkSignal } from "../src/NetworkSignal"
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
@@ -58,7 +58,7 @@ describe("网络信号", () => {
       Effect.gen(function* () {
         const network = yield* NetworkSignal
         return yield* network.get
-      }).pipe(Effect.provide(NetworkSignalLive)),
+      }).pipe(Effect.provide(makeNetworkSignalLive())),
     )
 
     expect(isOnline).toBe(false)
@@ -88,7 +88,7 @@ describe("网络信号", () => {
           yield* Effect.all([Deferred.await(firstReady), Deferred.await(secondReady)])
           browser.dispatch(true)
           return yield* Effect.all([Fiber.join(first), Fiber.join(second)])
-        }).pipe(Effect.provide(NetworkSignalLive)),
+        }).pipe(Effect.provide(makeNetworkSignalLive())),
       ),
     )
 
@@ -130,7 +130,7 @@ describe("网络信号", () => {
           yield* Deferred.succeed(resume, undefined)
           yield* Fiber.join(consumer)
           return yield* Ref.get(received)
-        }).pipe(Effect.provide(NetworkSignalLive)),
+        }).pipe(Effect.provide(makeNetworkSignalLive())),
       ),
     )
 
@@ -144,7 +144,7 @@ describe("网络信号", () => {
       Effect.gen(function* () {
         const network = yield* NetworkSignal
         return yield* network.get
-      }).pipe(Effect.provide(NetworkSignalLive)),
+      }).pipe(Effect.provide(makeNetworkSignalLive())),
     )
 
     expect(isOnline).toBe(true)
@@ -169,7 +169,7 @@ describe("网络信号", () => {
     const value = await Effect.runPromise(
       Effect.gen(function* () {
         const scope = yield* Scope.make()
-        const context = yield* Layer.buildWithScope(NetworkSignalLive, scope)
+        const context = yield* Layer.buildWithScope(makeNetworkSignalLive(), scope)
         const network = Context.get(context, NetworkSignal)
         yield* Scope.close(scope, Exit.void)
         browser.dispatch(true)

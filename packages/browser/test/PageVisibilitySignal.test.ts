@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Ref, Scope, Stream } from "effect"
-import {
-  makePageVisibilitySignalLive,
-  PageVisibilitySignal,
-  PageVisibilitySignalLive,
-} from "../src/PageVisibilitySignal"
+import { makePageVisibilitySignalLive, PageVisibilitySignal } from "../src/PageVisibilitySignal"
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
@@ -61,7 +57,7 @@ describe("页面可见信号", () => {
       Effect.gen(function* () {
         const visibility = yield* PageVisibilitySignal
         return yield* visibility.get
-      }).pipe(Effect.provide(PageVisibilitySignalLive)),
+      }).pipe(Effect.provide(makePageVisibilitySignalLive())),
     )
 
     expect(isVisible).toBe(false)
@@ -91,7 +87,7 @@ describe("页面可见信号", () => {
           yield* Effect.all([Deferred.await(firstReady), Deferred.await(secondReady)])
           browserDocument.dispatch("visible")
           return yield* Effect.all([Fiber.join(first), Fiber.join(second)])
-        }).pipe(Effect.provide(PageVisibilitySignalLive)),
+        }).pipe(Effect.provide(makePageVisibilitySignalLive())),
       ),
     )
 
@@ -133,7 +129,7 @@ describe("页面可见信号", () => {
           yield* Deferred.succeed(resume, undefined)
           yield* Fiber.join(consumer)
           return yield* Ref.get(received)
-        }).pipe(Effect.provide(PageVisibilitySignalLive)),
+        }).pipe(Effect.provide(makePageVisibilitySignalLive())),
       ),
     )
 
@@ -150,7 +146,7 @@ describe("页面可见信号", () => {
       Effect.gen(function* () {
         const visibility = yield* PageVisibilitySignal
         return yield* visibility.get
-      }).pipe(Effect.provide(PageVisibilitySignalLive)),
+      }).pipe(Effect.provide(makePageVisibilitySignalLive())),
     )
 
     expect(isVisible).toBe(true)
@@ -219,7 +215,7 @@ describe("页面可见信号", () => {
     const value = await Effect.runPromise(
       Effect.gen(function* () {
         const scope = yield* Scope.make()
-        const context = yield* Layer.buildWithScope(PageVisibilitySignalLive, scope)
+        const context = yield* Layer.buildWithScope(makePageVisibilitySignalLive(), scope)
         const visibility = Context.get(context, PageVisibilitySignal)
         yield* Scope.close(scope, Exit.void)
         browserDocument.dispatch("visible")

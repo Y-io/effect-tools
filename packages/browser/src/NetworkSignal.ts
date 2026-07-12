@@ -34,5 +34,3 @@ export const makeNetworkSignalLive = (defaultValue = true) =>
       })
     }),
   )
-
-export const NetworkSignalLive = makeNetworkSignalLive()
