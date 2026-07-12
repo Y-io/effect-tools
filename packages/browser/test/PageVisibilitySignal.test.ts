@@ -169,6 +169,25 @@ describe("页面可见信号", () => {
     expect(isVisible).toBe(false)
   })
 
+  test("读取浏览器状态失败时记录错误并使用默认值", async () => {
+    installDocument("visible")
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get() {
+        throw new Error("visibility state unavailable")
+      },
+    })
+
+    const isVisible = await Effect.runPromise(
+      Effect.gen(function* () {
+        const visibility = yield* PageVisibilitySignal
+        return yield* visibility.get
+      }).pipe(Effect.provide(makePageVisibilitySignalLive(false))),
+    )
+
+    expect(isVisible).toBe(false)
+  })
+
   test("Scope 关闭后停止响应页面可见性事件", async () => {
     const browserDocument = installDocument("hidden")
 

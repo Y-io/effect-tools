@@ -13,8 +13,13 @@ export const withBrowserEnvironment = <Value>(options: {
       )
       return { isBrowser: false, value: options.defaultValue }
     }
-    return {
-      isBrowser: true,
-      value: yield* Effect.sync(options.getValue),
-    }
+    const value = yield* Effect.try(options.getValue).pipe(
+      Effect.catchAll((error) =>
+        Effect.logError(
+          `${options.service} failed to read browser value; defaulting to ${options.defaultValue}`,
+          error,
+        ).pipe(Effect.as(options.defaultValue)),
+      ),
+    )
+    return { isBrowser: true, value }
   })
