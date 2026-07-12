@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
-import { NetworkSignal, NetworkSignalLive } from "../src/NetworkSignal"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
+import { makeNetworkSignalLive, NetworkSignal, NetworkSignalLive } from "../src/NetworkSignal"
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
@@ -137,17 +137,30 @@ describe("网络信号", () => {
     expect(values).toEqual([false, true])
   })
 
-  test("非浏览器 runtime 构造时以 defect 失败", async () => {
+  test("非浏览器环境记录错误并默认网络在线", async () => {
     Reflect.deleteProperty(globalThis, "window")
 
-    const exit = await Effect.runPromiseExit(Effect.void.pipe(Effect.provide(NetworkSignalLive)))
+    const isOnline = await Effect.runPromise(
+      Effect.gen(function* () {
+        const network = yield* NetworkSignal
+        return yield* network.get
+      }).pipe(Effect.provide(NetworkSignalLive)),
+    )
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      expect(Array.from(Cause.defects(exit.cause), String)).toEqual([
-        "Error: NetworkSignal requires a browser environment",
-      ])
-    }
+    expect(isOnline).toBe(true)
+  })
+
+  test("非浏览器环境使用外部传入的默认值", async () => {
+    Reflect.deleteProperty(globalThis, "window")
+
+    const isOnline = await Effect.runPromise(
+      Effect.gen(function* () {
+        const network = yield* NetworkSignal
+        return yield* network.get
+      }).pipe(Effect.provide(makeNetworkSignalLive(false))),
+    )
+
+    expect(isOnline).toBe(false)
   })
 
   test("Scope 关闭后停止响应浏览器网络事件", async () => {

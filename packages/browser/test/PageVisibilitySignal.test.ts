@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
-import { PageVisibilitySignal, PageVisibilitySignalLive } from "../src/PageVisibilitySignal"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
+import {
+  makePageVisibilitySignalLive,
+  PageVisibilitySignal,
+  PageVisibilitySignalLive,
+} from "../src/PageVisibilitySignal"
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
@@ -136,22 +140,33 @@ describe("页面可见信号", () => {
     expect(values).toEqual([false, true])
   })
 
-  test("document 为 undefined 时以浏览器环境 defect 失败", async () => {
+  test("非浏览器环境记录错误并默认页面可见", async () => {
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: undefined,
     })
 
-    const exit = await Effect.runPromiseExit(
-      Effect.void.pipe(Effect.provide(PageVisibilitySignalLive)),
+    const isVisible = await Effect.runPromise(
+      Effect.gen(function* () {
+        const visibility = yield* PageVisibilitySignal
+        return yield* visibility.get
+      }).pipe(Effect.provide(PageVisibilitySignalLive)),
     )
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      expect(Array.from(Cause.defects(exit.cause), String)).toEqual([
-        "Error: PageVisibilitySignal requires a browser environment",
-      ])
-    }
+    expect(isVisible).toBe(true)
+  })
+
+  test("非浏览器环境使用外部传入的默认值", async () => {
+    Reflect.deleteProperty(globalThis, "document")
+
+    const isVisible = await Effect.runPromise(
+      Effect.gen(function* () {
+        const visibility = yield* PageVisibilitySignal
+        return yield* visibility.get
+      }).pipe(Effect.provide(makePageVisibilitySignalLive(false))),
+    )
+
+    expect(isVisible).toBe(false)
   })
 
   test("Scope 关闭后停止响应页面可见性事件", async () => {

@@ -1,33 +1,38 @@
 import { Context, Effect, Layer } from "effect"
 import type { Subscribable } from "effect"
-import { isBrowserEnvironment } from "./internal/isBrowserEnvironment"
 import { makeBooleanSignal } from "./internal/makeBooleanSignal"
+import { withBrowserEnvironment } from "./internal/withBrowserEnvironment"
 
 export const NetworkSignal = Context.GenericTag<Subscribable.Subscribable<boolean>>("NetworkSignal")
 
-export const NetworkSignalLive = Layer.scoped(
-  NetworkSignal,
-  Effect.gen(function* () {
-    const initial = yield* Effect.sync(() => {
-      if (!isBrowserEnvironment()) {
-        throw new Error("NetworkSignal requires a browser environment")
-      }
-      return window.navigator.onLine
-    })
-    return yield* makeBooleanSignal(initial, (emit) => {
-      const online = () => emit(true)
-      const offline = () => emit(false)
-      return Effect.acquireRelease(
-        Effect.sync(() => {
-          window.addEventListener("online", online)
-          window.addEventListener("offline", offline)
-        }),
-        () =>
+export const makeNetworkSignalLive = (defaultValue = true) =>
+  Layer.scoped(
+    NetworkSignal,
+    Effect.gen(function* () {
+      const environment = yield* withBrowserEnvironment({
+        service: "NetworkSignal",
+        defaultValue,
+        getValue: () => window.navigator.onLine,
+      })
+      return yield* makeBooleanSignal(environment.value, (emit) => {
+        if (!environment.isBrowser) {
+          return Effect.void
+        }
+        const online = () => emit(true)
+        const offline = () => emit(false)
+        return Effect.acquireRelease(
           Effect.sync(() => {
-            window.removeEventListener("online", online)
-            window.removeEventListener("offline", offline)
+            window.addEventListener("online", online)
+            window.addEventListener("offline", offline)
           }),
-      )
-    })
-  }),
-)
+          () =>
+            Effect.sync(() => {
+              window.removeEventListener("online", online)
+              window.removeEventListener("offline", offline)
+            }),
+        )
+      })
+    }),
+  )
+
+export const NetworkSignalLive = makeNetworkSignalLive()
