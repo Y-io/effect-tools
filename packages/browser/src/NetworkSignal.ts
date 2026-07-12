@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { Subscribable } from "effect"
+import { isBrowserEnvironment } from "./internal/isBrowserEnvironment"
 import { makeBooleanSignal } from "./internal/makeBooleanSignal"
-import { requireBrowserEnvironment } from "./internal/requireBrowserEnvironment"
 
 export const NetworkSignal = Context.GenericTag<Subscribable.Subscribable<boolean>>("NetworkSignal")
 
@@ -9,8 +9,10 @@ export const NetworkSignalLive = Layer.scoped(
   NetworkSignal,
   Effect.gen(function* () {
     const initial = yield* Effect.sync(() => {
-      const browser = requireBrowserEnvironment("NetworkSignal", "window")
-      return browser.window.navigator.onLine
+      if (!isBrowserEnvironment()) {
+        throw new Error("NetworkSignal requires a browser environment")
+      }
+      return window.navigator.onLine
     })
     return yield* makeBooleanSignal(initial, (emit) => {
       const online = () => emit(true)

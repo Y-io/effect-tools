@@ -3,6 +3,7 @@ import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Strea
 import { PageVisibilitySignal, PageVisibilitySignalLive } from "../src/PageVisibilitySignal"
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 
 const installDocument = (visibilityState: DocumentVisibilityState) => {
   const browserDocument = new EventTarget() as EventTarget & {
@@ -12,6 +13,10 @@ const installDocument = (visibilityState: DocumentVisibilityState) => {
   Object.defineProperty(globalThis, "document", {
     configurable: true,
     value: browserDocument,
+  })
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: new EventTarget(),
   })
   return {
     dispatch(nextVisibilityState: DocumentVisibilityState) {
@@ -26,6 +31,11 @@ afterEach(() => {
     Reflect.deleteProperty(globalThis, "document")
   } else {
     Object.defineProperty(globalThis, "document", originalDocument)
+  }
+  if (originalWindow === undefined) {
+    Reflect.deleteProperty(globalThis, "window")
+  } else {
+    Object.defineProperty(globalThis, "window", originalWindow)
   }
 })
 

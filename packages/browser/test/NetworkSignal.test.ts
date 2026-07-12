@@ -3,6 +3,7 @@ import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Strea
 import { NetworkSignal, NetworkSignalLive } from "../src/NetworkSignal"
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
 
 const installBrowser = (onLine: boolean) => {
   const browserWindow = new EventTarget() as EventTarget & {
@@ -12,6 +13,10 @@ const installBrowser = (onLine: boolean) => {
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: browserWindow,
+  })
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: new EventTarget(),
   })
   return {
     dispatch(isOnline: boolean) {
@@ -26,6 +31,11 @@ afterEach(() => {
     Reflect.deleteProperty(globalThis, "window")
   } else {
     Object.defineProperty(globalThis, "window", originalWindow)
+  }
+  if (originalDocument === undefined) {
+    Reflect.deleteProperty(globalThis, "document")
+  } else {
+    Object.defineProperty(globalThis, "document", originalDocument)
   }
 })
 
