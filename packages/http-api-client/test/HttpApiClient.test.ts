@@ -90,7 +90,7 @@ describe("响应提供者", () => {
 })
 
 describe("HttpApiClient", () => {
-  test("按声明顺序组合 providers 并返回 Schema 解码结果", async () => {
+  test("按声明顺序组合请求提供者与响应提供者，并返回 Schema 解码结果", async () => {
     const events = Ref.unsafeMake<ReadonlyArray<string>>([])
     const appendEvent = (event: string) => Ref.update(events, (values) => [...values, event])
     const api = HttpApi.make("test-api").add(
