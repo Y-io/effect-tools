@@ -1,0 +1,16 @@
+{
+  "name": "@pkg/browser",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test --pass-with-no-tests",
+    "lint": "oxlint .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check ."
+  }
+}
