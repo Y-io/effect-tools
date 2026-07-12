@@ -1,1 +1,1 @@
-export { NetworkSignal } from "./network-signal"
+export { NetworkSignal, NetworkSignalLive } from "./network-signal"

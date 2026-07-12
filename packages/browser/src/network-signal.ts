@@ -1,7 +1,10 @@
-import { Effect, PubSub, Ref, Runtime, Stream, Subscribable } from "effect"
+import { Context, Effect, Layer, PubSub, Ref, Runtime, Stream, Subscribable } from "effect"
 
-export class NetworkSignal extends Effect.Service<NetworkSignal>()("NetworkSignal", {
-  scoped: Effect.gen(function* () {
+export const NetworkSignal = Context.GenericTag<Subscribable.Subscribable<boolean>>("NetworkSignal")
+
+export const NetworkSignalLive = Layer.scoped(
+  NetworkSignal,
+  Effect.gen(function* () {
     const initial = yield* Effect.sync(() => {
       if (typeof window === "undefined" || typeof navigator === "undefined") {
         throw new Error("NetworkSignal requires a browser environment")
@@ -38,11 +41,9 @@ export class NetworkSignal extends Effect.Service<NetworkSignal>()("NetworkSigna
         }),
     )
 
-    return {
-      isOnline: Subscribable.make({
-        get: Ref.get(current),
-        changes: Stream.fromPubSub(updates),
-      }),
-    }
+    return Subscribable.make({
+      get: Ref.get(current),
+      changes: Stream.fromPubSub(updates),
+    })
   }),
-}) {}
+)

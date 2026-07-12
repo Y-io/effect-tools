@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Ref, Scope, Stream } from "effect"
-import { NetworkSignal } from "../src/index"
+import { NetworkSignal, NetworkSignalLive } from "../src/index"
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 
@@ -36,8 +36,8 @@ describe("网络信号", () => {
     const isOnline = await Effect.runPromise(
       Effect.gen(function* () {
         const network = yield* NetworkSignal
-        return yield* network.isOnline.get
-      }).pipe(Effect.provide(NetworkSignal.Default)),
+        return yield* network.get
+      }).pipe(Effect.provide(NetworkSignalLive)),
     )
 
     expect(isOnline).toBe(false)
@@ -52,13 +52,13 @@ describe("网络信号", () => {
           const network = yield* NetworkSignal
           const firstReady = yield* Deferred.make<void>()
           const secondReady = yield* Deferred.make<void>()
-          const first = yield* network.isOnline.changes.pipe(
+          const first = yield* network.changes.pipe(
             Stream.tap((value) => (value ? Effect.void : Deferred.succeed(firstReady, undefined))),
             Stream.take(2),
             Stream.runCollect,
             Effect.fork,
           )
-          const second = yield* network.isOnline.changes.pipe(
+          const second = yield* network.changes.pipe(
             Stream.tap((value) => (value ? Effect.void : Deferred.succeed(secondReady, undefined))),
             Stream.take(2),
             Stream.runCollect,
@@ -67,7 +67,7 @@ describe("网络信号", () => {
           yield* Effect.all([Deferred.await(firstReady), Deferred.await(secondReady)])
           browser.dispatch(true)
           return yield* Effect.all([Fiber.join(first), Fiber.join(second)])
-        }).pipe(Effect.provide(NetworkSignal.Default)),
+        }).pipe(Effect.provide(NetworkSignalLive)),
       ),
     )
 
@@ -87,7 +87,7 @@ describe("网络信号", () => {
           const firstStarted = yield* Deferred.make<void>()
           const resume = yield* Deferred.make<void>()
           const received = yield* Ref.make<ReadonlyArray<boolean>>([])
-          const consumer = yield* network.isOnline.changes.pipe(
+          const consumer = yield* network.changes.pipe(
             Stream.take(2),
             Stream.runForEach((value) =>
               Effect.gen(function* () {
@@ -109,7 +109,7 @@ describe("网络信号", () => {
           yield* Deferred.succeed(resume, undefined)
           yield* Fiber.join(consumer)
           return yield* Ref.get(received)
-        }).pipe(Effect.provide(NetworkSignal.Default)),
+        }).pipe(Effect.provide(NetworkSignalLive)),
       ),
     )
 
@@ -119,9 +119,7 @@ describe("网络信号", () => {
   test("非浏览器 runtime 构造时以 defect 失败", async () => {
     Reflect.deleteProperty(globalThis, "window")
 
-    const exit = await Effect.runPromiseExit(
-      Effect.void.pipe(Effect.provide(NetworkSignal.Default)),
-    )
+    const exit = await Effect.runPromiseExit(Effect.void.pipe(Effect.provide(NetworkSignalLive)))
 
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
@@ -137,11 +135,11 @@ describe("网络信号", () => {
     const value = await Effect.runPromise(
       Effect.gen(function* () {
         const scope = yield* Scope.make()
-        const context = yield* Layer.buildWithScope(NetworkSignal.Default, scope)
+        const context = yield* Layer.buildWithScope(NetworkSignalLive, scope)
         const network = Context.get(context, NetworkSignal)
         yield* Scope.close(scope, Exit.void)
         browser.dispatch(true)
-        return yield* network.isOnline.get
+        return yield* network.get
       }),
     )
 
