@@ -33,7 +33,7 @@ Provider 缺失或 `enabled = false` 时，HttpApiClient endpoint query 使用 T
 _Avoid_: SSR 时执行缺少 Service 的 endpoint、用默认 runtime 掩盖缺失依赖
 
 **Effect Query Key**：
-由用户在 `makeEffectQueryOptions` 最后一个参数填写的字符串名称与必需的 JSON object 请求组成的只读二元组；名称在类型上仅约束为 `string` 并保留传入的 literal 类型，`METHOD:group.name` 只是文档推荐格式，不由类型系统强制或提示。请求类型从此前选定的 HttpApiClient endpoint method 提取，但只包含 `path`、`urlParams` 与 `payload`，无输入的 endpoint 使用空 object；headers、`withResponse` 与非 JSON 值不属于 key。
+由用户在 `makeEffectQueryOptions` 最后一个参数填写的非空字符串名称与必需的 JSON object 请求组成的只读二元组；名称保留传入的 literal 类型，字面量空字符串在类型层拒绝，动态空字符串在 descriptor 构造时抛出 `TypeError`。`METHOD:group.name` 只是文档推荐格式，不由类型系统强制或提示。请求类型从此前选定的 HttpApiClient endpoint method 提取，但只包含 `path`、`urlParams` 与 `payload`，无输入的 endpoint 使用空 object；headers、`withResponse` 与非 JSON 值不属于 key。
 _Avoid_: 任意 QueryKey、参数数组
 
 **Query Descriptor**：
@@ -45,7 +45,7 @@ _Avoid_: 手写 TanStack Query options、Endpoint metadata
 _Avoid_: 任意 Effect 函数、原生 queryFn、Promise factory
 
 **Mutation Descriptor**：
-由 `makeEffectMutationOptions` 从 HttpApiClient Service、endpoint selector 与显式字符串名称建立的不可变描述。它与 Query descriptor 同样返回 `key` 与 `options()`；生成的 `mutationKey` 固定为 `[key]`，`mutationFn` 保留 Effect，直到 `useEffectMutation` 边界才通过应用 runtime 执行。调用方通过 spread 添加 TanStack 原生 Mutation options，适配层不包装 callbacks 或缓存失效规则。
+由 `makeEffectMutationOptions` 从 HttpApiClient Service、endpoint selector 与显式非空字符串名称建立的不可变描述。它与 Query descriptor 同样返回 `key` 与 `options()`，并共享空字符串的类型与运行时校验；生成的 `mutationKey` 固定为 `[key]`，`mutationFn` 保留 Effect，直到 `useEffectMutation` 边界才通过应用 runtime 执行。调用方通过 spread 添加 TanStack 原生 Mutation options，适配层不包装 callbacks 或缓存失效规则。
 _Avoid_: 手写 TanStack mutationFn、自动缓存失效、Mutation DSL
 
 **Mutation Variables**：

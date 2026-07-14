@@ -21,6 +21,8 @@ const options = getUserQuery.options({
 
 `queryKey` 固定为 `[key, request]`。request 从 endpoint 推导，只允许 JSON 形式的 `path`、`urlParams` 与 `payload`；headers、FormData 和 `withResponse` 不在此边界内。
 
+Query 与 Mutation descriptor 的 key 必须是非空字符串；字面量 `""` 会产生类型错误，动态空字符串会在 descriptor 构造时抛出 `TypeError`。
+
 ## Runtime 与 React
 
 ```tsx

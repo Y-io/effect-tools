@@ -6,6 +6,7 @@ import type {
   EndpointRequest,
   HttpApiEndpointFunction,
 } from "./http-api"
+import { assertNonEmptyKey, type NonEmptyKey } from "./key"
 
 const EffectMutationOptionsTypeId: unique symbol = Symbol.for(
   "@pkg/http-api-client/react-query/EffectMutationOptions",
@@ -48,7 +49,7 @@ export function makeEffectMutationOptions<
 >(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => EmptyHttpApiEndpointFunction<A, E, R, Response>,
-  key: Key,
+  key: NonEmptyKey<Key>,
 ): MutationDescriptor<Key, void, A, E, R | Identifier>
 export function makeEffectMutationOptions<
   Identifier,
@@ -62,13 +63,15 @@ export function makeEffectMutationOptions<
 >(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => HttpApiEndpointFunction<Input, A, E, R, Response>,
-  key: Key,
+  key: NonEmptyKey<Key>,
 ): MutationDescriptor<Key, EndpointRequest<Input>, A, E, R | Identifier>
 export function makeEffectMutationOptions<Identifier, Service>(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => unknown,
   key: string,
 ): unknown {
+  assertNonEmptyKey(key)
+
   const mutationFn = (variables: unknown) =>
     Effect.flatMap(service, (client) => {
       const endpoint = select(client) as (

@@ -90,6 +90,11 @@ const healthMutation = makeEffectMutationOptions(
 )
 const healthMutationKey: readonly ["GET:test.health"] = healthMutation.options().mutationKey
 
+// @ts-expect-error Query descriptor key 不能为空字符串
+makeEffectQueryOptions(ApiClient, (client) => client.test.health, "")
+// @ts-expect-error Mutation descriptor key 不能为空字符串
+makeEffectMutationOptions(ApiClient, (client) => client.test.health, "")
+
 const searchQuery = makeEffectQueryOptions(
   ApiClient,
   (client) => client.test.search,
