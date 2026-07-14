@@ -3,11 +3,7 @@ import { afterEach, expect, test } from "bun:test"
 import { Context, Effect, Layer, ManagedRuntime } from "effect"
 import type { ReactElement } from "react"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
-import {
-  EffectDefect,
-  makeEffectMutationOptions,
-  makeEffectReactRuntime,
-} from "../../src/react/index"
+import { EffectDefect, makeEffectMutation, makeEffectReactRuntime } from "../../src/react/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -75,7 +71,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
     )
   const runtime = makeManagedRuntime(Layer.succeed(TestClient, { users: { update: endpoint } }))
   const EffectReact = makeEffectReactRuntime<Context.Tag.Identifier<typeof TestClient>>()
-  const descriptor = makeEffectMutationOptions(
+  const descriptor = makeEffectMutation(
     TestClient,
     (client) => client.users.update,
     "PATCH:users.update",
@@ -128,7 +124,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
 
 test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", async () => {
   const EffectReact = makeEffectReactRuntime<Context.Tag.Identifier<typeof TestClient>>()
-  const descriptor = makeEffectMutationOptions(
+  const descriptor = makeEffectMutation(
     TestClient,
     (client) => client.users.update,
     "PATCH:users.update",
@@ -168,11 +164,7 @@ test("无输入 endpoint 允许 mutateAsync()", async () => {
   const endpoint: HealthEndpoint = () => Effect.succeed("healthy")
   const runtime = makeManagedRuntime(Layer.succeed(HealthClient, { health: endpoint }))
   const EffectReact = makeEffectReactRuntime<Context.Tag.Identifier<typeof HealthClient>>()
-  const descriptor = makeEffectMutationOptions(
-    HealthClient,
-    (client) => client.health,
-    "GET:health",
-  )
+  const descriptor = makeEffectMutation(HealthClient, (client) => client.health, "GET:health")
   const queryClient = new QueryClient()
   let mutateAsync: (() => Promise<string>) | undefined
 

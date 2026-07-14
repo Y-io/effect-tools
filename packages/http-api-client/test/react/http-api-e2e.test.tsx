@@ -9,11 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { expect, test } from "bun:test"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
-import {
-  makeEffectMutationOptions,
-  makeEffectQueryOptions,
-  makeEffectReactRuntime,
-} from "../../src/react/index"
+import { makeEffectMutation, makeEffectQuery, makeEffectReactRuntime } from "../../src/react/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -92,12 +88,12 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
 
   const managedRuntime = ManagedRuntime.make(RealApiClient.Default)
   const EffectReact = makeEffectReactRuntime<RealApiClient>()
-  const lookupQuery = makeEffectQueryOptions(
+  const lookupQuery = makeEffectQuery(
     RealApiClient,
     (client) => client.users.lookup,
     "POST:users.lookup",
   )
-  const lookupMutation = makeEffectMutationOptions(
+  const lookupMutation = makeEffectMutation(
     RealApiClient,
     (client) => client.users.lookup,
     "POST:users.lookup",

@@ -57,20 +57,12 @@ export type EmptyQueryDescriptor<Key extends string, A, E, R> = {
   readonly options: () => DescriptorOptions<Key, {}, A, E, R>
 }
 
-export function makeEffectQueryOptions<
-  Identifier,
-  Service,
-  A,
-  E,
-  R,
-  Response,
-  const Key extends string,
->(
+export function makeEffectQuery<Identifier, Service, A, E, R, Response, const Key extends string>(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => EmptyHttpApiEndpointFunction<A, E, R, Response>,
   key: StaticNonEmptyKey<Key>,
 ): EmptyQueryDescriptor<Key, A, E, R | Identifier>
-export function makeEffectQueryOptions<
+export function makeEffectQuery<
   Identifier,
   Service,
   Input extends JsonObject,
@@ -86,7 +78,7 @@ export function makeEffectQueryOptions<
 ): SupportedQueryInput<Input> extends never
   ? never
   : QueryDescriptor<Key, QueryInput<Input>, A, E, R | Identifier>
-export function makeEffectQueryOptions<Identifier, Service>(
+export function makeEffectQuery<Identifier, Service>(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => unknown,
   key: string,

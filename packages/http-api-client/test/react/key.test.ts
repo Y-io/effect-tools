@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Context, Effect } from "effect"
-import { makeEffectMutationOptions, makeEffectQueryOptions } from "../../src/react/index"
+import { makeEffectMutation, makeEffectQuery } from "../../src/react/index"
 
 type EmptyEndpoint = <WithResponse extends boolean = false>(
   input: void | { readonly withResponse?: WithResponse },
@@ -13,13 +13,13 @@ const TestClient = Context.GenericTag<{
 const runtimeEmptyKey = "" as "GET:test.dynamic"
 
 test("Query descriptor 在运行时拒绝空字符串 key", () => {
-  expect(() =>
-    makeEffectQueryOptions(TestClient, (client) => client.endpoint, runtimeEmptyKey),
-  ).toThrow("React Query descriptor key must not be empty")
+  expect(() => makeEffectQuery(TestClient, (client) => client.endpoint, runtimeEmptyKey)).toThrow(
+    "React Query descriptor key must not be empty",
+  )
 })
 
 test("Mutation descriptor 在运行时拒绝空字符串 key", () => {
   expect(() =>
-    makeEffectMutationOptions(TestClient, (client) => client.endpoint, runtimeEmptyKey),
+    makeEffectMutation(TestClient, (client) => client.endpoint, runtimeEmptyKey),
   ).toThrow("React Query descriptor key must not be empty")
 })

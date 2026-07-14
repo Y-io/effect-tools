@@ -7,14 +7,14 @@ import {
 } from "@effect/platform"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import {
-  makeEffectMutationOptions,
-  makeEffectQueryOptions,
+  makeEffectMutation,
+  makeEffectQuery,
   makeEffectReactRuntime,
   type EffectMutationOptions,
   type EffectQueryOptions,
 } from "../../src/react/index"
 
-// @ts-expect-error options 只能由 makeEffectQueryOptions 构造
+// @ts-expect-error options 只能由 makeEffectQuery 构造
 const handwrittenOptions: EffectQueryOptions<{}, string, never, never> = {
   queryKey: ["GET:test.handwritten", {}],
   queryFn: () => Effect.succeed("unsupported"),
@@ -74,16 +74,12 @@ const api = HttpApi.make("api").add(
 const clientEffect = HttpApiClient.make(api)
 class ApiClient extends Effect.Service<ApiClient>()("ApiClient", { effect: clientEffect }) {}
 
-const healthQuery = makeEffectQueryOptions(
-  ApiClient,
-  (client) => client.test.health,
-  "GET:test.health",
-)
+const healthQuery = makeEffectQuery(ApiClient, (client) => client.test.health, "GET:test.health")
 const healthOptions = healthQuery.options()
 const healthKey: "GET:test.health" = healthQuery.key
 const healthInput: {} = healthOptions.queryKey[1]
 
-const healthMutation = makeEffectMutationOptions(
+const healthMutation = makeEffectMutation(
   ApiClient,
   (client) => client.test.health,
   "GET:test.health",
@@ -91,37 +87,33 @@ const healthMutation = makeEffectMutationOptions(
 const healthMutationKey: readonly ["GET:test.health"] = healthMutation.options().mutationKey
 
 // @ts-expect-error Query descriptor key 不能为空字符串
-makeEffectQueryOptions(ApiClient, (client) => client.test.health, "")
+makeEffectQuery(ApiClient, (client) => client.test.health, "")
 // @ts-expect-error Mutation descriptor key 不能为空字符串
-makeEffectMutationOptions(ApiClient, (client) => client.test.health, "")
+makeEffectMutation(ApiClient, (client) => client.test.health, "")
 
 declare const dynamicKey: string
 // @ts-expect-error Query descriptor key 必须是静态字符串 literal
-makeEffectQueryOptions(ApiClient, (client) => client.test.health, dynamicKey)
+makeEffectQuery(ApiClient, (client) => client.test.health, dynamicKey)
 // @ts-expect-error Mutation descriptor key 必须是静态字符串 literal
-makeEffectMutationOptions(ApiClient, (client) => client.test.health, dynamicKey)
+makeEffectMutation(ApiClient, (client) => client.test.health, dynamicKey)
 
 const dynamicTemplateKey = `GET:${dynamicKey}` as const
 // @ts-expect-error 包含动态 string 的模板 key 仍然不是静态字符串
-makeEffectQueryOptions(ApiClient, (client) => client.test.health, dynamicTemplateKey)
+makeEffectQuery(ApiClient, (client) => client.test.health, dynamicTemplateKey)
 // @ts-expect-error 包含动态 string 的模板 key 仍然不是静态字符串
-makeEffectMutationOptions(ApiClient, (client) => client.test.health, dynamicTemplateKey)
+makeEffectMutation(ApiClient, (client) => client.test.health, dynamicTemplateKey)
 
 const staticKey = "GET:test.static" as const
-const staticQuery = makeEffectQueryOptions(ApiClient, (client) => client.test.health, staticKey)
+const staticQuery = makeEffectQuery(ApiClient, (client) => client.test.health, staticKey)
 const preservedStaticKey: "GET:test.static" = staticQuery.key
 void preservedStaticKey
 
 declare const staticKeyUnion: "GET:test.first" | "GET:test.second"
-const unionQuery = makeEffectQueryOptions(ApiClient, (client) => client.test.health, staticKeyUnion)
+const unionQuery = makeEffectQuery(ApiClient, (client) => client.test.health, staticKeyUnion)
 const preservedStaticKeyUnion: "GET:test.first" | "GET:test.second" = unionQuery.key
 void preservedStaticKeyUnion
 
-const searchQuery = makeEffectQueryOptions(
-  ApiClient,
-  (client) => client.test.search,
-  "POST:test.search",
-)
+const searchQuery = makeEffectQuery(ApiClient, (client) => client.test.search, "POST:test.search")
 const searchOptions = searchQuery.options({
   path: { organizationId: "org-1", collectionId: "collection-1" },
   urlParams: { cursor: "next", limit: 20 },
@@ -136,7 +128,7 @@ searchQuery.options({
   payload: { filters: [{ field: "status", values: ["active"] }] },
 })
 
-const unsupportedHeadersQuery = makeEffectQueryOptions(
+const unsupportedHeadersQuery = makeEffectQuery(
   ApiClient,
   (client) => client.test.searchWithHeaders,
   "POST:test.search-with-headers",
@@ -144,22 +136,22 @@ const unsupportedHeadersQuery = makeEffectQueryOptions(
 // @ts-expect-error endpoints with required headers produce no query descriptor
 void unsupportedHeadersQuery.options
 
-const headersMutation = makeEffectMutationOptions(
+const headersMutation = makeEffectMutation(
   ApiClient,
   (client) => client.test.searchWithHeaders,
   "POST:test.search-with-headers",
 )
 
 // @ts-expect-error FormData payloads are not JSON query input
-makeEffectQueryOptions(ApiClient, (client) => client.test.upload, "POST:test.upload")
+makeEffectQuery(ApiClient, (client) => client.test.upload, "POST:test.upload")
 
-const uploadMutation = makeEffectMutationOptions(
+const uploadMutation = makeEffectMutation(
   ApiClient,
   (client) => client.test.upload,
   "POST:test.upload",
 )
 
-const findQuery = makeEffectQueryOptions(ApiClient, (client) => client.test.find, "POST:test.find")
+const findQuery = makeEffectQuery(ApiClient, (client) => client.test.find, "POST:test.find")
 findQuery.options({ payload: { id: "u-1" } })
 findQuery.options({ payload: { slug: "ada" } })
 
@@ -209,7 +201,7 @@ const MutationTypeProbe = () => {
   return null
 }
 
-// @ts-expect-error options 只能由 makeEffectMutationOptions 构造
+// @ts-expect-error options 只能由 makeEffectMutation 构造
 const handwrittenMutationOptions: EffectMutationOptions<{}, string, never, never> = {
   mutationKey: ["POST:test.handwritten"],
   mutationFn: () => Effect.succeed("unsupported"),

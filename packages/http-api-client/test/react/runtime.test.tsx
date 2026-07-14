@@ -4,7 +4,7 @@ import { Context, Effect, Layer, ManagedRuntime } from "effect"
 import { createElement, type ReactElement } from "react"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import { renderToString } from "react-dom/server"
-import { makeEffectReactRuntime, makeEffectQueryOptions, EffectDefect } from "../../src/react/index"
+import { makeEffectQuery, makeEffectReactRuntime, EffectDefect } from "../../src/react/index"
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
@@ -51,7 +51,7 @@ const makeQueryHarness = <A, E>(effect: () => Effect.Effect<A, E>) => {
   )
   const runtime = makeManagedRuntime(Layer.succeed(TestClient, { test: { execute: endpoint } }))
   const EffectReact = makeEffectReactRuntime<TestService>()
-  const descriptor = makeEffectQueryOptions(
+  const descriptor = makeEffectQuery(
     TestClient,
     (client) => client.test.execute,
     "GET:test.execute",

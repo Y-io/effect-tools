@@ -5,9 +5,9 @@
 ## Query descriptor
 
 ```ts
-import { makeEffectQueryOptions } from "@pkg/http-api-client/react"
+import { makeEffectQuery } from "@pkg/http-api-client/react"
 
-export const getUserQuery = makeEffectQueryOptions(
+export const getUserQuery = makeEffectQuery(
   ApiClient,
   (client) => client.users.get,
   "GET:users.get",
@@ -193,9 +193,9 @@ function Root() {
 ## Mutation descriptor
 
 ```tsx
-import { makeEffectMutationOptions } from "@pkg/http-api-client/react"
+import { makeEffectMutation } from "@pkg/http-api-client/react"
 
-export const updateUserMutation = makeEffectMutationOptions(
+export const updateUserMutation = makeEffectMutation(
   ApiClient,
   (client) => client.users.update,
   "PATCH:users.update",

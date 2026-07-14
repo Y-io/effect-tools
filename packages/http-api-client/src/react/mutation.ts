@@ -38,7 +38,7 @@ export type MutationDescriptor<Key extends string, Variables, A, E, R> = {
   readonly options: () => MutationDescriptorOptions<Key, Variables, A, E, R>
 }
 
-export function makeEffectMutationOptions<
+export function makeEffectMutation<
   Identifier,
   Service,
   A,
@@ -51,7 +51,7 @@ export function makeEffectMutationOptions<
   select: (client: Service) => EmptyHttpApiEndpointFunction<A, E, R, Response>,
   key: StaticNonEmptyKey<Key>,
 ): MutationDescriptor<Key, void, A, E, R | Identifier>
-export function makeEffectMutationOptions<
+export function makeEffectMutation<
   Identifier,
   Service,
   Input,
@@ -65,7 +65,7 @@ export function makeEffectMutationOptions<
   select: (client: Service) => HttpApiEndpointFunction<Input, A, E, R, Response>,
   key: StaticNonEmptyKey<Key>,
 ): MutationDescriptor<Key, EndpointRequest<Input>, A, E, R | Identifier>
-export function makeEffectMutationOptions<Identifier, Service>(
+export function makeEffectMutation<Identifier, Service>(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => unknown,
   key: string,
