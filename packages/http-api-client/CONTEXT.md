@@ -60,6 +60,10 @@ _Avoid_: 自定义并发策略、隐式 invalidation
 交给 TanStack Query 与 Mutation 的错误联合 `E | EffectDefect`。单一 `Effect.fail(E)` 保留 endpoint 的原始业务错误值与联合类型；defect、interruption、组合 Cause 与 runtime loader 异常才包装为持有底层 cause 的 `EffectDefect`，不把所有 endpoint error 统一包装。
 _Avoid_: 统一 API 错误包装、丢失 endpoint error union
 
+**Endpoint Span**：
+`useEffectQuery` 与 `useEffectMutation` 在调用 runtime runner 前以 `queryKey[0]` 或 `mutationKey[0]` 包裹 `Effect.withSpan`。descriptor 的必填字符串 key 因此同时作为稳定 span 名；TanStack retry 每次重新执行 Effect 时独立建立 span。
+_Avoid_: 将 request variables 或 payload 拼入 span 名
+
 ## React Query implementation scope
 
 实现 Query 与 Mutation descriptors，以及 `makeEffectQueryRuntime` 返回的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。runtime 由应用创建并负责释放；适配层只惰性取得并使用它。当前不承担 TanStack Query 的 `initialData` defined-result overload，也不透传 hooks 的第二个 QueryClient 参数。

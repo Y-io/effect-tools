@@ -136,11 +136,17 @@ describe("makeEffectQueryRuntime", () => {
     queryClient.clear()
   })
 
-  test("useEffectQuery 有 loader 时执行 Effect", async () => {
+  test("useEffectQuery 有 loader 时使用 query key span 执行 Effect", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let loaderCalls = 0
     let value: string | undefined
-    const { descriptor, runtime } = makeQueryHarness(() => Effect.succeed("executed"))
+    let spanName: string | undefined
+    const { descriptor, runtime } = makeQueryHarness(() =>
+      Effect.currentSpan.pipe(
+        Effect.tap((span) => Effect.sync(() => (spanName = span.name))),
+        Effect.as("executed"),
+      ),
+    )
     const options = descriptor.options()
 
     const Probe = () => {
@@ -166,6 +172,7 @@ describe("makeEffectQueryRuntime", () => {
     await act(async () => settled)
 
     expect(value).toBe("executed")
+    expect(spanName).toBe("GET:test.execute")
     expect(loaderCalls).toBe(1)
     queryClient.clear()
   })

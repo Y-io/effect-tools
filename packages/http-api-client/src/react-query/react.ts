@@ -5,7 +5,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query"
-import { Runtime, type Effect } from "effect"
+import { Effect, Runtime } from "effect"
 import { createContext, createElement, useCallback, useContext, type ReactNode } from "react"
 import { EffectDefect, runEffect, type EffectRuntimeLoader } from "./effect"
 import type { EffectMutationOptions } from "./mutation"
@@ -62,7 +62,9 @@ export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>)
         activeRuntimeLoader === undefined
           ? skipToken
           : ({ queryKey, signal }) => {
-              return run(queryFn(queryKey[1] as Input), { signal })
+              return run(queryFn(queryKey[1] as Input).pipe(Effect.withSpan(queryKey[0])), {
+                signal,
+              })
             },
     })
   }
@@ -71,11 +73,12 @@ export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>)
     options: EffectMutationOptions<Variables, A, E, EffectR, OnMutateResult>,
   ): UseMutationResult<A, E | EffectDefect, Variables, OnMutateResult> => {
     const run = useRunner()
-    const { mutationFn, ...tanStackOptions } = options
+    const { mutationFn, mutationKey, ...tanStackOptions } = options
 
     return useMutation({
       ...tanStackOptions,
-      mutationFn: (variables) => run(mutationFn(variables)),
+      mutationKey,
+      mutationFn: (variables) => run(mutationFn(variables).pipe(Effect.withSpan(mutationKey[0]))),
     })
   }
 

@@ -56,10 +56,13 @@ const mount = async (node: ReactElement) => {
 
 test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () => {
   const calls: Array<UpdateInput> = []
-  const endpoint: UpdateEndpoint = (input) => {
-    calls.push(input)
-    return Effect.succeed(`updated:${input.path.id}`)
-  }
+  let spanName: string | undefined
+  const endpoint: UpdateEndpoint = (input) =>
+    Effect.currentSpan.pipe(
+      Effect.tap((span) => Effect.sync(() => (spanName = span.name))),
+      Effect.tap(() => Effect.sync(() => calls.push(input))),
+      Effect.as(`updated:${input.path.id}`),
+    )
   const runtime = Runtime.defaultRuntime.pipe(
     Runtime.provideService(TestClient, { users: { update: endpoint } }),
   )
@@ -108,6 +111,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
   expect(result).toBe("updated:u-1")
   expect(descriptor.key).toBe("PATCH:users.update")
   expect(descriptor.options().mutationKey).toEqual(["PATCH:users.update"])
+  expect(spanName).toBe("PATCH:users.update")
   expect(calls).toEqual([variables])
   expect(events).toEqual(["mutate:u-1", "success:updated:u-1:u-1"])
   unmountAll()

@@ -76,6 +76,8 @@ export const UpdateUser = () => {
 
 Mutation variables 从 endpoint request 推导，支持 `path`、`urlParams`、`payload`、`headers` 与 FormData，并固定排除 `withResponse`。无输入 endpoint 使用 `mutate()`。除 descriptor 固定的 `mutationKey` 与 `mutationFn` 外，retry、scope 和 callbacks 等配置保持 TanStack Mutation 原生语义；缓存更新与失效由调用方在 callbacks 中显式完成。
 
+`useEffectQuery` 与 `useEffectMutation` 在执行 endpoint Effect 时使用 key 的第一项建立 `Effect.withSpan`，因此 descriptor key 同时是 tracing span 名。
+
 应用负责创建与释放 runtime。Provider 只控制 runtime 是否可用；disabled 或缺失时 `useEffectQuery` 使用 TanStack `skipToken`。`useEffectMutation` 仍返回原生 mutation result，但提交需要业务 Service 的 mutation 时会通过默认 runtime 失败为 `EffectDefect`。`useRunner` 在 Provider 外只可执行不需要业务环境的 Effect，并回退到 `Runtime.defaultRuntime`。
 
 Effect 的单一业务失败保持原始错误，defect、中断和组合 Cause 转为 `EffectDefect`。当前不复刻 Query `initialData` 的 defined-result overload。
