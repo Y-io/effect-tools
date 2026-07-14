@@ -9,7 +9,7 @@ import {
   makeEffectQueryOptions,
   QueryDefect,
   type EffectRuntimeLoader,
-} from "../src/index"
+} from "../../src/react-query/index"
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
@@ -42,7 +42,7 @@ const makeQueryHarness = <A, E>(effect: () => Effect.Effect<A, E>) => {
   const endpoint = (() => effect()) as EmptyEndpoint<A, E>
   const TestClient = Context.GenericTag<{
     readonly test: { readonly execute: EmptyEndpoint<A, E> }
-  }>("@pkg/effect-query/test/TestClient")
+  }>("@pkg/http-api-client/react-query/test/TestClient")
   const runtime = Runtime.defaultRuntime.pipe(
     Runtime.provideService(TestClient, { test: { execute: endpoint } }),
   )

@@ -1,5 +1,7 @@
 # @pkg/http-api-client
 
+为 Effect `HttpApiClient` 提供请求与响应 provider，并通过独立子路径提供 TanStack React Query 适配。
+
 提供三个用于定义 `HttpApiClient` 请求与响应处理的工具：
 
 ```ts
@@ -82,3 +84,16 @@ const makeClient = Effect.gen(function* () {
 请求提供者按 `pipe` 中的声明顺序执行。后一个请求提供者会收到前一个请求提供者返回的完整 `HttpClientRequest`，因此依赖最终 URL 或 headers 的签名提供者应放在相关变换之后。
 
 响应提供者在收到原始 `HttpClientResponse` 后执行。若需要重试整个 endpoint 并重新读取动态 Service，调用方对 endpoint Effect 使用 `Effect.retry`。
+
+## React Query
+
+React 应用从 `@pkg/http-api-client/react-query` 导入 Query API；根入口不会加载 React 适配层。
+
+```ts
+import {
+  makeEffectQueryOptions,
+  makeEffectQueryRuntime,
+} from "@pkg/http-api-client/react-query"
+```
+
+完整用法见 [React Query 适配](./docs/react-query.md)。

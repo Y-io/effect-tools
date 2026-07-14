@@ -1,9 +1,0 @@
-{
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "jsx": "react-jsx",
-    "noEmit": true
-  },
-  "exclude": ["prototype/start-app"],
-  "include": ["src/**/*.ts", "test/**/*.ts", "prototype/**/*.ts", "prototype/**/*.tsx"]
-}

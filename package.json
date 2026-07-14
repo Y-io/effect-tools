@@ -11,7 +11,7 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "effect-query:verify": "bun run --cwd packages/effect-query verify",
+    "http-api-client:verify": "bun run --cwd packages/http-api-client verify",
     "prepare": "effect-tsgo patch"
   },
   "dependencies": {

@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { expect, test } from "bun:test"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
-import { makeEffectQueryOptions, makeEffectQueryRuntime } from "../src/index"
+import { makeEffectQueryOptions, makeEffectQueryRuntime } from "../../src/react-query/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 

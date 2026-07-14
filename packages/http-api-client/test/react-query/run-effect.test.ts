@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { Cause, Effect, Runtime } from "effect"
-import { QueryDefect } from "../src/index"
-import { runEffect } from "../src/model"
+import { QueryDefect } from "../../src/react-query/index"
+import { runEffect } from "../../src/react-query/model"
 
 test("runEffect 保留单一业务失败", async () => {
   const error = { _tag: "UserNotFound", id: "missing" } as const

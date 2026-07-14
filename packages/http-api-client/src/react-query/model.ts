@@ -11,7 +11,9 @@ export interface JsonObject {
   readonly [key: string]: Json
 }
 
-const EffectQueryOptionsTypeId: unique symbol = Symbol.for("@pkg/effect-query/EffectQueryOptions")
+const EffectQueryOptionsTypeId: unique symbol = Symbol.for(
+  "@pkg/http-api-client/react-query/EffectQueryOptions",
+)
 
 export type EffectQueryKey<Input extends JsonObject> = readonly [name: string, input: Input]
 

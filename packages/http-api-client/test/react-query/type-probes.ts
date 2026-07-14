@@ -6,7 +6,7 @@ import {
   HttpApiSchema,
 } from "@effect/platform"
 import { Effect, Schema } from "effect"
-import { makeEffectQueryOptions, type EffectQueryOptions } from "../src/index"
+import { makeEffectQueryOptions, type EffectQueryOptions } from "../../src/react-query/index"
 
 // @ts-expect-error options 只能由 makeEffectQueryOptions 构造
 const handwrittenOptions: EffectQueryOptions<{}, string, never, never> = {
