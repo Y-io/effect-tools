@@ -6,7 +6,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import {
   EffectDefect,
   makeEffectMutationOptions,
-  makeEffectRuntime,
+  makeEffectReactRuntime,
 } from "../../src/react-query/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -74,7 +74,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
       Effect.as(`updated:${input.path.id}`),
     )
   const runtime = makeManagedRuntime(Layer.succeed(TestClient, { users: { update: endpoint } }))
-  const EffectReact = makeEffectRuntime<Context.Tag.Identifier<typeof TestClient>>()
+  const EffectReact = makeEffectReactRuntime<Context.Tag.Identifier<typeof TestClient>>()
   const descriptor = makeEffectMutationOptions(
     TestClient,
     (client) => client.users.update,
@@ -127,7 +127,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
 })
 
 test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", async () => {
-  const EffectReact = makeEffectRuntime<Context.Tag.Identifier<typeof TestClient>>()
+  const EffectReact = makeEffectReactRuntime<Context.Tag.Identifier<typeof TestClient>>()
   const descriptor = makeEffectMutationOptions(
     TestClient,
     (client) => client.users.update,
@@ -167,7 +167,7 @@ test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", 
 test("无输入 endpoint 允许 mutateAsync()", async () => {
   const endpoint: HealthEndpoint = () => Effect.succeed("healthy")
   const runtime = makeManagedRuntime(Layer.succeed(HealthClient, { health: endpoint }))
-  const EffectReact = makeEffectRuntime<Context.Tag.Identifier<typeof HealthClient>>()
+  const EffectReact = makeEffectReactRuntime<Context.Tag.Identifier<typeof HealthClient>>()
   const descriptor = makeEffectMutationOptions(
     HealthClient,
     (client) => client.health,

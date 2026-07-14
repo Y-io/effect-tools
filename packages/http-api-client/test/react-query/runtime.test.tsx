@@ -5,7 +5,7 @@ import { createElement, type ReactElement } from "react"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import { renderToString } from "react-dom/server"
 import {
-  makeEffectRuntime,
+  makeEffectReactRuntime,
   makeEffectQueryOptions,
   EffectDefect,
 } from "../../src/react-query/index"
@@ -54,7 +54,7 @@ const makeQueryHarness = <A, E>(effect: () => Effect.Effect<A, E>) => {
     "@pkg/http-api-client/react-query/test/TestClient",
   )
   const runtime = makeManagedRuntime(Layer.succeed(TestClient, { test: { execute: endpoint } }))
-  const EffectReact = makeEffectRuntime<TestService>()
+  const EffectReact = makeEffectReactRuntime<TestService>()
   const descriptor = makeEffectQueryOptions(
     TestClient,
     (client) => client.test.execute,
@@ -73,11 +73,11 @@ const waitForStatus = (queryClient: QueryClient, status: "success") =>
     })
   })
 
-describe("makeEffectRuntime", () => {
+describe("makeEffectReactRuntime", () => {
   test("Provider SSR render 时不构建 ManagedRuntime", async () => {
     let calls = 0
     const runtime = makeManagedRuntime(Layer.effectDiscard(Effect.sync(() => (calls += 1))))
-    const EffectReact = makeEffectRuntime<never>()
+    const EffectReact = makeEffectReactRuntime<never>()
 
     const html = renderToString(
       <EffectReact.Provider runtime={runtime}>
@@ -90,7 +90,7 @@ describe("makeEffectRuntime", () => {
   })
 
   test("useRunner 没有 runtime 时使用 Runtime.defaultRuntime", async () => {
-    const EffectReact = makeEffectRuntime<never>()
+    const EffectReact = makeEffectReactRuntime<never>()
     let run: ReturnType<typeof EffectReact.useRunner> | undefined
 
     const Capture = () => {
@@ -105,7 +105,7 @@ describe("makeEffectRuntime", () => {
   test("useRunner 等待 ManagedRuntime 构建，构建失败包装为 EffectDefect", async () => {
     const loaderError = new Error("runtime failed")
     const runtime = makeManagedRuntime(Layer.fail(loaderError))
-    const EffectReact = makeEffectRuntime<never>()
+    const EffectReact = makeEffectReactRuntime<never>()
     let run: ReturnType<typeof EffectReact.useRunner> | undefined
 
     const Capture = () => {

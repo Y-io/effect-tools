@@ -11,7 +11,7 @@ import { EffectDefect, runEffect, type EffectRuntimeHandle } from "./effect"
 import type { EffectMutationOptions } from "./mutation"
 import type { EffectQueryOptions, JsonObject } from "./query"
 
-export const makeEffectRuntime = <R>() => {
+export const makeEffectReactRuntime = <R>() => {
   const RuntimeContext = createContext<EffectRuntimeHandle<R> | undefined>(undefined)
 
   const Provider = ({

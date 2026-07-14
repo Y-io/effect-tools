@@ -93,7 +93,7 @@ React 应用从 `@pkg/http-api-client/react-query` 导入 Query API；根入口�
 import {
   makeEffectMutationOptions,
   makeEffectQueryOptions,
-  makeEffectRuntime,
+  makeEffectReactRuntime,
 } from "@pkg/http-api-client/react-query"
 ```
 

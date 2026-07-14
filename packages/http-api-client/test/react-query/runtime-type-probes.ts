@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, ManagedRuntime } from "effect"
-import { makeEffectRuntime, type EffectRuntimeHandle } from "../../src/react-query/index"
+import { makeEffectReactRuntime, type EffectRuntimeHandle } from "../../src/react-query/index"
 
 class AvailableService extends Context.Tag("AvailableService")<
   AvailableService,
@@ -13,11 +13,11 @@ class MissingService extends Context.Tag("MissingService")<
 
 const runtime = ManagedRuntime.make(Layer.succeed(AvailableService, { value: "available" }))
 const missingRuntime = ManagedRuntime.make(Layer.succeed(MissingService, { value: "missing" }))
-const EffectReact = makeEffectRuntime<AvailableService>()
+const EffectReact = makeEffectReactRuntime<AvailableService>()
 type ProviderProps = Parameters<typeof EffectReact.Provider>[0]
 
 const providerProps: ProviderProps = { runtime }
-// @ts-expect-error Provider runtime 必须包含 makeEffectRuntime 声明的 Service
+// @ts-expect-error Provider runtime 必须包含 makeEffectReactRuntime 声明的 Service
 const missingProviderProps: ProviderProps = { runtime: missingRuntime }
 
 const RuntimeTypeProbe = () => {

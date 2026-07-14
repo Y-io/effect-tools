@@ -9,7 +9,7 @@ import { Effect, ManagedRuntime, Schema } from "effect"
 import {
   makeEffectMutationOptions,
   makeEffectQueryOptions,
-  makeEffectRuntime,
+  makeEffectReactRuntime,
   type EffectMutationOptions,
   type EffectQueryOptions,
 } from "../../src/react-query/index"
@@ -170,7 +170,7 @@ void searchKey
 void handwrittenOptions
 
 declare const apiRuntime: ManagedRuntime.ManagedRuntime<ApiClient, never>
-const EffectReact = makeEffectRuntime<ApiClient>()
+const EffectReact = makeEffectReactRuntime<ApiClient>()
 type ProviderProps = Parameters<typeof EffectReact.Provider>[0]
 const providerProps: ProviderProps = { runtime: apiRuntime }
 

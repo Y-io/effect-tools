@@ -21,7 +21,7 @@ _Avoid_: 响应拦截器、Response Interceptor、Middleware
 _Avoid_: 数据获取框架、Query 框架、React Query 封装层
 
 **Effect Runtime Bindings**：
-由 `makeEffectRuntime<R>()` 创建的 Effect–React bindings，显式固定环境类型，返回共享同一 React context 的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。`Provider` 同步接收可选的 `EffectRuntimeHandle<R>`；`useRuntime` 返回当前句柄或 `undefined`；`useRunner` 等待句柄内部的 Layer 构建、为 Effect 提供其环境并执行，在句柄不存在时只回退到 `Runtime.defaultRuntime`；`useEffectQuery` 使用同一实例判断 runtime 是否可用。bindings 不构建 Layer，也不拥有 runtime 的释放。
+由 `makeEffectReactRuntime<R>()` 创建的 Effect–React bindings，显式固定环境类型，返回共享同一 React context 的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。`Provider` 同步接收可选的 `EffectRuntimeHandle<R>`；`useRuntime` 返回当前句柄或 `undefined`；`useRunner` 等待句柄内部的 Layer 构建、为 Effect 提供其环境并执行，在句柄不存在时只回退到 `Runtime.defaultRuntime`；`useEffectQuery` 使用同一实例判断 runtime 是否可用。bindings 不构建 Layer，也不拥有 runtime 的释放。
 _Avoid_: 包级 Runtime 单例、业务 Service 专用 Provider
 
 **Effect Runtime Handle**：
@@ -66,4 +66,4 @@ _Avoid_: 将 request variables 或 payload 拼入 span 名
 
 ## React Query implementation scope
 
-实现 Query 与 Mutation descriptors，以及 `makeEffectRuntime` 当前返回的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。runtime 由应用创建并负责释放；适配层只取得同步传入的句柄，并在执行时等待其 Layer 构建。当前不承担 TanStack Query 的 `initialData` defined-result overload，也不透传 hooks 的第二个 QueryClient 参数。
+实现 Query 与 Mutation descriptors，以及 `makeEffectReactRuntime` 当前返回的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。runtime 由应用创建并负责释放；适配层只取得同步传入的句柄，并在执行时等待其 Layer 构建。当前不承担 TanStack Query 的 `initialData` defined-result overload，也不透传 hooks 的第二个 QueryClient 参数。
