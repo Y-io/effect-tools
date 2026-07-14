@@ -4,11 +4,7 @@ import { Context, Effect, Layer, ManagedRuntime } from "effect"
 import { createElement, type ReactElement } from "react"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import { renderToString } from "react-dom/server"
-import {
-  makeEffectReactRuntime,
-  makeEffectQueryOptions,
-  EffectDefect,
-} from "../../src/react-query/index"
+import { makeEffectReactRuntime, makeEffectQueryOptions, EffectDefect } from "../../src/react/index"
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean

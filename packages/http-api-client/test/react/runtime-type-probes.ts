@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, ManagedRuntime } from "effect"
-import { makeEffectReactRuntime, type EffectRuntimeHandle } from "../../src/react-query/index"
+import { makeEffectReactRuntime, type EffectRuntimeHandle } from "../../src/react/index"
 
 class AvailableService extends Context.Tag("AvailableService")<
   AvailableService,

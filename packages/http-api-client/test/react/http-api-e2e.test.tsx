@@ -13,7 +13,7 @@ import {
   makeEffectMutationOptions,
   makeEffectQueryOptions,
   makeEffectReactRuntime,
-} from "../../src/react-query/index"
+} from "../../src/react/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Context, Effect } from "effect"
-import { makeEffectMutationOptions, makeEffectQueryOptions } from "../../src/react-query/index"
+import { makeEffectMutationOptions, makeEffectQueryOptions } from "../../src/react/index"
 
 type EmptyEndpoint = <WithResponse extends boolean = false>(
   input: void | { readonly withResponse?: WithResponse },

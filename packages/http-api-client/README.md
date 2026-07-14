@@ -87,14 +87,14 @@ const makeClient = Effect.gen(function* () {
 
 ## React Query
 
-React 应用从 `@pkg/http-api-client/react-query` 导入 Query API；根入口不会加载 React 适配层。
+React 应用从 `@pkg/http-api-client/react` 导入 Query API；根入口不会加载 React 适配层。
 
 ```ts
 import {
   makeEffectMutationOptions,
   makeEffectQueryOptions,
   makeEffectReactRuntime,
-} from "@pkg/http-api-client/react-query"
+} from "@pkg/http-api-client/react"
 ```
 
 完整用法见 [React Query 适配](./docs/react-query.md)。

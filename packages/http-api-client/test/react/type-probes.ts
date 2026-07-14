@@ -12,7 +12,7 @@ import {
   makeEffectReactRuntime,
   type EffectMutationOptions,
   type EffectQueryOptions,
-} from "../../src/react-query/index"
+} from "../../src/react/index"
 
 // @ts-expect-error options 只能由 makeEffectQueryOptions 构造
 const handwrittenOptions: EffectQueryOptions<{}, string, never, never> = {
