@@ -9,7 +9,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { expect, test } from "bun:test"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
-import { makeEffectQueryOptions, makeEffectQueryRuntime } from "../../src/react-query/index"
+import {
+  makeEffectMutationOptions,
+  makeEffectQueryOptions,
+  makeEffectQueryRuntime,
+} from "../../src/react-query/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -39,6 +43,12 @@ type RequestRecord = {
   readonly view: string | null
 }
 
+type LookupInput = {
+  readonly path: { readonly id: string }
+  readonly payload: { readonly profile: { readonly displayName: string } }
+  readonly urlParams: { readonly view: string }
+}
+
 const waitForQuery = (queryClient: QueryClient) =>
   new Promise<void>((resolve) => {
     const unsubscribe = queryClient.getQueryCache().subscribe(({ query }) => {
@@ -48,7 +58,7 @@ const waitForQuery = (queryClient: QueryClient) =>
     })
   })
 
-test("真实 HttpApiClient Service 通过 useEffectQuery 执行请求与业务错误", async () => {
+test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", async () => {
   const requests: Array<RequestRecord> = []
   const server = Bun.serve({
     port: 0,
@@ -83,6 +93,11 @@ test("真实 HttpApiClient Service 通过 useEffectQuery 执行请求与业务�
   const managedRuntime = ManagedRuntime.make(RealApiClient.Default)
   const EffectQuery = makeEffectQueryRuntime(() => managedRuntime.runtime())
   const lookupQuery = makeEffectQueryOptions(
+    RealApiClient,
+    (client) => client.users.lookup,
+    "POST:users.lookup",
+  )
+  const lookupMutation = makeEffectMutationOptions(
     RealApiClient,
     (client) => client.users.lookup,
     "POST:users.lookup",
@@ -124,6 +139,38 @@ test("真实 HttpApiClient Service 通过 useEffectQuery 执行请求与业务�
     return { options, snapshot }
   }
 
+  const mutate = async (id: string) => {
+    const queryClient = new QueryClient()
+    let mutateAsync: ((variables: LookupInput) => Promise<unknown>) | undefined
+
+    const Probe = () => {
+      mutateAsync = EffectQuery.useEffectMutation(lookupMutation.options()).mutateAsync
+      return null
+    }
+
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(
+        <QueryClientProvider client={queryClient}>
+          <EffectQuery.Provider>
+            <Probe />
+          </EffectQuery.Provider>
+        </QueryClientProvider>,
+      )
+    })
+    let result: unknown
+    await act(async () => {
+      result = await mutateAsync!({
+        path: { id },
+        payload: { profile: { displayName: "Grace" } },
+        urlParams: { view: "compact" },
+      })
+    })
+    act(() => renderer!.unmount())
+    queryClient.clear()
+    return result
+  }
+
   try {
     const success = await execute("u-1")
     expect(success.options.queryKey).toEqual([
@@ -145,6 +192,12 @@ test("真实 HttpApiClient Service 通过 useEffectQuery 执行请求与业务�
     expect(failure.snapshot.error).toBeInstanceOf(UserNotFound)
     expect(failure.snapshot.error).toMatchObject({ _tag: "UserNotFound", id: "missing" })
 
+    expect(await mutate("u-2")).toEqual({
+      id: "u-2",
+      profile: { displayName: "Grace" },
+      view: "compact",
+    })
+
     expect(requests).toEqual([
       {
         method: "POST",
@@ -157,6 +210,12 @@ test("真实 HttpApiClient Service 通过 useEffectQuery 执行请求与业务�
         path: "/users/missing",
         payload: { profile: { displayName: "Ada" } },
         view: "full",
+      },
+      {
+        method: "POST",
+        path: "/users/u-2",
+        payload: { profile: { displayName: "Grace" } },
+        view: "compact",
       },
     ])
   } finally {

@@ -1,9 +1,11 @@
 import type { UseQueryOptions } from "@tanstack/react-query"
-import { Cause, Context, Data, Effect, Exit, Runtime } from "effect"
-
-export class QueryDefect extends Data.TaggedError("QueryDefect")<{
-  readonly cause: unknown
-}> {}
+import { Context, Effect } from "effect"
+import type { EffectDefect } from "./effect"
+import type {
+  EmptyHttpApiEndpointFunction,
+  EndpointRequest,
+  HttpApiEndpointFunction,
+} from "./http-api"
 
 export type Json = null | boolean | number | string | ReadonlyArray<Json> | JsonObject
 
@@ -22,7 +24,7 @@ export type QueryEffect<Input extends JsonObject, A, E, R> = (
 ) => Effect.Effect<A, E, R>
 
 export type EffectQueryOptions<Input extends JsonObject, A, E, R, Data = A> = Omit<
-  UseQueryOptions<A, E | QueryDefect, Data, EffectQueryKey<Input>>,
+  UseQueryOptions<A, E | EffectDefect, Data, EffectQueryKey<Input>>,
   "queryFn" | "queryKey"
 > & {
   readonly [EffectQueryOptionsTypeId]: typeof EffectQueryOptionsTypeId
@@ -30,24 +32,12 @@ export type EffectQueryOptions<Input extends JsonObject, A, E, R, Data = A> = Om
   readonly queryFn: QueryEffect<Input, A, E, R>
 }
 
-type HttpApiQueryFunction<Input extends JsonObject, A, E, R, Response> = <
-  WithResponse extends boolean = false,
->(
-  input: Input & { readonly withResponse?: WithResponse },
-) => Effect.Effect<WithResponse extends true ? [A, Response] : A, E, R>
-
 type QueryInputField = "path" | "payload" | "urlParams" | "withResponse"
 
 type SupportedQueryInput<Input extends JsonObject> =
   Exclude<keyof Input, QueryInputField> extends never ? unknown : never
 
-type QueryInput<Input extends JsonObject> = Input extends unknown
-  ? Omit<Input, "withResponse">
-  : never
-
-type EmptyHttpApiQueryFunction<A, E, R, Response> = <WithResponse extends boolean = false>(
-  input: void | { readonly withResponse?: WithResponse },
-) => Effect.Effect<WithResponse extends true ? [A, Response] : A, E, R>
+type QueryInput<Input extends JsonObject> = EndpointRequest<Input>
 
 export type DescriptorOptions<Key extends string, Input extends JsonObject, A, E, R> = Omit<
   EffectQueryOptions<Input, A, E, R>,
@@ -76,7 +66,7 @@ export function makeEffectQueryOptions<
   const Key extends string,
 >(
   service: Context.Tag<Identifier, Service>,
-  select: (client: Service) => EmptyHttpApiQueryFunction<A, E, R, Response>,
+  select: (client: Service) => EmptyHttpApiEndpointFunction<A, E, R, Response>,
   key: Key,
 ): EmptyQueryDescriptor<Key, A, E, R | Identifier>
 export function makeEffectQueryOptions<
@@ -90,7 +80,7 @@ export function makeEffectQueryOptions<
   const Key extends string,
 >(
   service: Context.Tag<Identifier, Service>,
-  select: (client: Service) => HttpApiQueryFunction<Input, A, E, R, Response>,
+  select: (client: Service) => HttpApiEndpointFunction<Input, A, E, R, Response>,
   key: Key,
 ): SupportedQueryInput<Input> extends never
   ? never
@@ -127,20 +117,3 @@ export function makeEffectQueryOptions<Identifier, Service>(
 
   return { key, options }
 }
-
-export const runEffect = <A, E, R>(
-  runtime: Runtime.Runtime<R>,
-  effect: Effect.Effect<A, E, R>,
-  options?: { readonly signal?: AbortSignal },
-): Promise<A> =>
-  Runtime.runPromiseExit(runtime, effect, options).then(
-    Exit.match({
-      onSuccess: (value) => value,
-      onFailure: (cause) => {
-        if (Cause.isFailType(cause)) {
-          throw cause.error
-        }
-        throw new QueryDefect({ cause: Cause.squash(cause) })
-      },
-    }),
-  )

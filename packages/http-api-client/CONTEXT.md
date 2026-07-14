@@ -44,12 +44,22 @@ _Avoid_: 手写 TanStack Query options、Endpoint metadata
 可接入 React Query 的 HttpApiClient endpoint method；其请求只能由 JSON 形式的 `path`、`urlParams` 与 `payload` 构成，并固定使用 `withResponse = false`。要求显式 headers 或 FormData 的 endpoint 不属于该边界。
 _Avoid_: 任意 Effect 函数、原生 queryFn、Promise factory
 
-**Query Error**：
-交给 TanStack Query 的错误联合 `E | QueryDefect`。单一 `Effect.fail(E)` 保留 endpoint 的原始业务错误值与联合类型；defect、interruption 和组合 Cause 才包装为持有 `Cause.squash(cause)` 的 `QueryDefect`，不把所有 endpoint error 统一包装。
+**Mutation Descriptor**：
+由 `makeEffectMutationOptions` 从 HttpApiClient Service、endpoint selector 与显式字符串名称建立的不可变描述。它与 Query descriptor 同样返回 `key` 与 `options()`；生成的 `mutationKey` 固定为 `[key]`，`mutationFn` 保留 Effect，直到 `useEffectMutation` 边界才通过应用 runtime 执行。调用方通过 spread 添加 TanStack 原生 Mutation options，适配层不包装 callbacks 或缓存失效规则。
+_Avoid_: 手写 TanStack mutationFn、自动缓存失效、Mutation DSL
+
+**Mutation Variables**：
+从 HttpApiClient endpoint 的完整 request 推导并固定排除 `withResponse`；允许 `path`、`urlParams`、`payload`、`headers` 与 FormData。无输入 endpoint 使用 `void`，允许直接调用 `mutate()`。variables 不进入 Query cache key，因此不承担 Query descriptor 的 JSON 限制。
+_Avoid_: 复用 Query input 限制、强制空 object、响应 tuple 开关
+
+**Mutation Concurrency**：
+完全沿用 TanStack Mutation：默认并行，相同 `scope.id` 串行；适配层不增加 Effect Semaphore、队列、latest-wins 或自动中断。缓存更新和失效由调用方使用 TanStack callbacks 与 QueryClient 显式完成。
+_Avoid_: 自定义并发策略、隐式 invalidation
+
+**Effect Defect**：
+交给 TanStack Query 与 Mutation 的错误联合 `E | EffectDefect`。单一 `Effect.fail(E)` 保留 endpoint 的原始业务错误值与联合类型；defect、interruption、组合 Cause 与 runtime loader 异常才包装为持有底层 cause 的 `EffectDefect`，不把所有 endpoint error 统一包装。
 _Avoid_: 统一 API 错误包装、丢失 endpoint error union
 
 ## React Query implementation scope
 
-实现 `makeEffectQueryOptions`、`makeEffectQueryRuntime` 及其返回的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery`。runtime 由应用创建并负责释放；适配层只惰性取得并使用它。当前不承担 TanStack Query 的 `initialData` defined-result overload，也不实现 mutation API。
-
-`useEffectMutation` 需要独立确认 mutation variables、错误类型、并发行为以及成功后的缓存失效接口，不复用 query descriptor 强行抽象。
+实现 Query 与 Mutation descriptors，以及 `makeEffectQueryRuntime` 返回的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。runtime 由应用创建并负责释放；适配层只惰性取得并使用它。当前不承担 TanStack Query 的 `initialData` defined-result overload，也不透传 hooks 的第二个 QueryClient 参数。

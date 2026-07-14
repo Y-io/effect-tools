@@ -7,7 +7,7 @@ import { renderToString } from "react-dom/server"
 import {
   makeEffectQueryRuntime,
   makeEffectQueryOptions,
-  QueryDefect,
+  EffectDefect,
   type EffectRuntimeLoader,
 } from "../../src/react-query/index"
 
@@ -96,7 +96,7 @@ describe("makeEffectQueryRuntime", () => {
     expect(await run!(Effect.succeed("default-runtime"))).toBe("default-runtime")
   })
 
-  test("useRunner 等待 loader，loader 失败包装为 QueryDefect", async () => {
+  test("useRunner 等待 loader，loader 失败包装为 EffectDefect", async () => {
     const loaderError = new Error("runtime failed")
     const EffectQuery = makeEffectQueryRuntime(() => Promise.reject(loaderError))
     let run: ReturnType<typeof EffectQuery.useRunner> | undefined
@@ -109,7 +109,7 @@ describe("makeEffectQueryRuntime", () => {
     await mount(createElement(EffectQuery.Provider, null, createElement(Capture)))
 
     await expect(run!(Effect.succeed("unused"))).rejects.toEqual(
-      new QueryDefect({ cause: loaderError }),
+      new EffectDefect({ cause: loaderError }),
     )
   })
 

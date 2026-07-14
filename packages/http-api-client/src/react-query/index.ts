@@ -1,6 +1,13 @@
+export { EffectDefect, type EffectRuntimeLoader } from "./effect"
+export {
+  makeEffectMutationOptions,
+  type EffectMutationOptions,
+  type MutationDescriptor,
+  type MutationDescriptorOptions,
+  type MutationEffect,
+} from "./mutation"
 export {
   makeEffectQueryOptions,
-  QueryDefect,
   type DescriptorOptions,
   type EffectQueryKey,
   type EffectQueryOptions,
@@ -9,5 +16,5 @@ export {
   type JsonObject,
   type QueryDescriptor,
   type QueryEffect,
-} from "./model"
-export { makeEffectQueryRuntime, type EffectRuntimeLoader } from "./react"
+} from "./query"
+export { makeEffectQueryRuntime } from "./react"

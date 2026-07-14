@@ -1,9 +1,15 @@
-import { skipToken, useQuery, type UseQueryResult } from "@tanstack/react-query"
+import {
+  skipToken,
+  useMutation,
+  useQuery,
+  type UseMutationResult,
+  type UseQueryResult,
+} from "@tanstack/react-query"
 import { Runtime, type Effect } from "effect"
 import { createContext, createElement, useCallback, useContext, type ReactNode } from "react"
-import { QueryDefect, runEffect, type EffectQueryOptions, type JsonObject } from "./model"
-
-export type EffectRuntimeLoader<R> = () => Runtime.Runtime<R> | PromiseLike<Runtime.Runtime<R>>
+import { EffectDefect, runEffect, type EffectRuntimeLoader } from "./effect"
+import type { EffectMutationOptions } from "./mutation"
+import type { EffectQueryOptions, JsonObject } from "./query"
 
 export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>) => {
   const RuntimeEnabledContext = createContext(false)
@@ -34,7 +40,7 @@ export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>)
               ? (Runtime.defaultRuntime as Runtime.Runtime<EffectR>)
               : ((await activeRuntimeLoader()) as Runtime.Runtime<EffectR>)
         } catch (cause) {
-          throw new QueryDefect({ cause })
+          throw new EffectDefect({ cause })
         }
 
         return runEffect(runtime, effect, options)
@@ -45,7 +51,7 @@ export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>)
 
   const useEffectQuery = <Input extends JsonObject, A, E, EffectR extends R, Data = A>(
     options: EffectQueryOptions<Input, A, E, EffectR, Data>,
-  ): UseQueryResult<Data, E | QueryDefect> => {
+  ): UseQueryResult<Data, E | EffectDefect> => {
     const activeRuntimeLoader = useRuntime()
     const run = useRunner()
     const { queryFn, ...tanStackOptions } = options
@@ -61,5 +67,17 @@ export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>)
     })
   }
 
-  return { Provider, useEffectQuery, useRunner, useRuntime } as const
+  const useEffectMutation = <Variables, A, E, EffectR extends R, OnMutateResult = unknown>(
+    options: EffectMutationOptions<Variables, A, E, EffectR, OnMutateResult>,
+  ): UseMutationResult<A, E | EffectDefect, Variables, OnMutateResult> => {
+    const run = useRunner()
+    const { mutationFn, ...tanStackOptions } = options
+
+    return useMutation({
+      ...tanStackOptions,
+      mutationFn: (variables) => run(mutationFn(variables)),
+    })
+  }
+
+  return { Provider, useEffectMutation, useEffectQuery, useRunner, useRuntime } as const
 }
