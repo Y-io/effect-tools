@@ -95,6 +95,28 @@ makeEffectQueryOptions(ApiClient, (client) => client.test.health, "")
 // @ts-expect-error Mutation descriptor key 不能为空字符串
 makeEffectMutationOptions(ApiClient, (client) => client.test.health, "")
 
+declare const dynamicKey: string
+// @ts-expect-error Query descriptor key 必须是静态字符串 literal
+makeEffectQueryOptions(ApiClient, (client) => client.test.health, dynamicKey)
+// @ts-expect-error Mutation descriptor key 必须是静态字符串 literal
+makeEffectMutationOptions(ApiClient, (client) => client.test.health, dynamicKey)
+
+const dynamicTemplateKey = `GET:${dynamicKey}` as const
+// @ts-expect-error 包含动态 string 的模板 key 仍然不是静态字符串
+makeEffectQueryOptions(ApiClient, (client) => client.test.health, dynamicTemplateKey)
+// @ts-expect-error 包含动态 string 的模板 key 仍然不是静态字符串
+makeEffectMutationOptions(ApiClient, (client) => client.test.health, dynamicTemplateKey)
+
+const staticKey = "GET:test.static" as const
+const staticQuery = makeEffectQueryOptions(ApiClient, (client) => client.test.health, staticKey)
+const preservedStaticKey: "GET:test.static" = staticQuery.key
+void preservedStaticKey
+
+declare const staticKeyUnion: "GET:test.first" | "GET:test.second"
+const unionQuery = makeEffectQueryOptions(ApiClient, (client) => client.test.health, staticKeyUnion)
+const preservedStaticKeyUnion: "GET:test.first" | "GET:test.second" = unionQuery.key
+void preservedStaticKeyUnion
+
 const searchQuery = makeEffectQueryOptions(
   ApiClient,
   (client) => client.test.search,

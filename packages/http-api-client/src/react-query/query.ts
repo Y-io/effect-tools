@@ -6,7 +6,7 @@ import type {
   EndpointRequest,
   HttpApiEndpointFunction,
 } from "./http-api"
-import { assertNonEmptyKey, type NonEmptyKey } from "./key"
+import { assertNonEmptyKey, type StaticNonEmptyKey } from "./key"
 
 export type Json = null | boolean | number | string | ReadonlyArray<Json> | JsonObject
 
@@ -68,7 +68,7 @@ export function makeEffectQueryOptions<
 >(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => EmptyHttpApiEndpointFunction<A, E, R, Response>,
-  key: NonEmptyKey<Key>,
+  key: StaticNonEmptyKey<Key>,
 ): EmptyQueryDescriptor<Key, A, E, R | Identifier>
 export function makeEffectQueryOptions<
   Identifier,
@@ -82,7 +82,7 @@ export function makeEffectQueryOptions<
 >(
   service: Context.Tag<Identifier, Service>,
   select: (client: Service) => HttpApiEndpointFunction<Input, A, E, R, Response>,
-  key: NonEmptyKey<Key>,
+  key: StaticNonEmptyKey<Key>,
 ): SupportedQueryInput<Input> extends never
   ? never
   : QueryDescriptor<Key, QueryInput<Input>, A, E, R | Identifier>
