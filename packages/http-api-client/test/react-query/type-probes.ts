@@ -9,7 +9,7 @@ import { Effect, ManagedRuntime, Schema } from "effect"
 import {
   makeEffectMutationOptions,
   makeEffectQueryOptions,
-  makeEffectQueryRuntime,
+  makeEffectRuntime,
   type EffectMutationOptions,
   type EffectQueryOptions,
 } from "../../src/react-query/index"
@@ -170,15 +170,15 @@ void searchKey
 void handwrittenOptions
 
 declare const apiRuntime: ManagedRuntime.ManagedRuntime<ApiClient, never>
-const EffectQuery = makeEffectQueryRuntime<ApiClient>()
-type ProviderProps = Parameters<typeof EffectQuery.Provider>[0]
+const EffectReact = makeEffectRuntime<ApiClient>()
+type ProviderProps = Parameters<typeof EffectReact.Provider>[0]
 const providerProps: ProviderProps = { runtime: apiRuntime }
 
 const MutationTypeProbe = () => {
-  const health = EffectQuery.useEffectMutation(healthMutation.options())
+  const health = EffectReact.useEffectMutation(healthMutation.options())
   health.mutate()
 
-  const headers = EffectQuery.useEffectMutation({
+  const headers = EffectReact.useEffectMutation({
     ...headersMutation.options(),
     scope: { id: "search-write" },
     retry: 1,
@@ -203,7 +203,7 @@ const MutationTypeProbe = () => {
     withResponse: true,
   })
 
-  const upload = EffectQuery.useEffectMutation(uploadMutation.options())
+  const upload = EffectReact.useEffectMutation(uploadMutation.options())
   upload.mutate({ payload: new FormData() })
 
   return null

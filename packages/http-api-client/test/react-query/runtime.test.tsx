@@ -5,7 +5,7 @@ import { createElement, type ReactElement } from "react"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import { renderToString } from "react-dom/server"
 import {
-  makeEffectQueryRuntime,
+  makeEffectRuntime,
   makeEffectQueryOptions,
   EffectDefect,
 } from "../../src/react-query/index"
@@ -54,14 +54,14 @@ const makeQueryHarness = <A, E>(effect: () => Effect.Effect<A, E>) => {
     "@pkg/http-api-client/react-query/test/TestClient",
   )
   const runtime = makeManagedRuntime(Layer.succeed(TestClient, { test: { execute: endpoint } }))
-  const EffectQuery = makeEffectQueryRuntime<TestService>()
+  const EffectReact = makeEffectRuntime<TestService>()
   const descriptor = makeEffectQueryOptions(
     TestClient,
     (client) => client.test.execute,
     "GET:test.execute",
   )
 
-  return { descriptor, EffectQuery, runtime }
+  return { descriptor, EffectReact, runtime }
 }
 
 const waitForStatus = (queryClient: QueryClient, status: "success") =>
@@ -73,16 +73,16 @@ const waitForStatus = (queryClient: QueryClient, status: "success") =>
     })
   })
 
-describe("makeEffectQueryRuntime", () => {
+describe("makeEffectRuntime", () => {
   test("Provider SSR render 时不构建 ManagedRuntime", async () => {
     let calls = 0
     const runtime = makeManagedRuntime(Layer.effectDiscard(Effect.sync(() => (calls += 1))))
-    const EffectQuery = makeEffectQueryRuntime<never>()
+    const EffectReact = makeEffectRuntime<never>()
 
     const html = renderToString(
-      <EffectQuery.Provider runtime={runtime}>
+      <EffectReact.Provider runtime={runtime}>
         <main>SSR</main>
-      </EffectQuery.Provider>,
+      </EffectReact.Provider>,
     )
 
     expect(html).toContain("SSR")
@@ -90,11 +90,11 @@ describe("makeEffectQueryRuntime", () => {
   })
 
   test("useRunner 没有 runtime 时使用 Runtime.defaultRuntime", async () => {
-    const EffectQuery = makeEffectQueryRuntime<never>()
-    let run: ReturnType<typeof EffectQuery.useRunner> | undefined
+    const EffectReact = makeEffectRuntime<never>()
+    let run: ReturnType<typeof EffectReact.useRunner> | undefined
 
     const Capture = () => {
-      run = EffectQuery.useRunner()
+      run = EffectReact.useRunner()
       return null
     }
 
@@ -105,15 +105,15 @@ describe("makeEffectQueryRuntime", () => {
   test("useRunner 等待 ManagedRuntime 构建，构建失败包装为 EffectDefect", async () => {
     const loaderError = new Error("runtime failed")
     const runtime = makeManagedRuntime(Layer.fail(loaderError))
-    const EffectQuery = makeEffectQueryRuntime<never>()
-    let run: ReturnType<typeof EffectQuery.useRunner> | undefined
+    const EffectReact = makeEffectRuntime<never>()
+    let run: ReturnType<typeof EffectReact.useRunner> | undefined
 
     const Capture = () => {
-      run = EffectQuery.useRunner()
+      run = EffectReact.useRunner()
       return null
     }
 
-    await mount(createElement(EffectQuery.Provider, { runtime }, createElement(Capture)))
+    await mount(createElement(EffectReact.Provider, { runtime }, createElement(Capture)))
 
     await expect(run!(Effect.succeed("unused"))).rejects.toEqual(
       new EffectDefect({ cause: loaderError }),
@@ -124,14 +124,14 @@ describe("makeEffectQueryRuntime", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let executions = 0
     let fetchStatus: string | undefined
-    const { descriptor, EffectQuery } = makeQueryHarness(() => {
+    const { descriptor, EffectReact } = makeQueryHarness(() => {
       executions += 1
       return Effect.succeed("unexpected")
     })
     const options = descriptor.options()
 
     const Probe = () => {
-      fetchStatus = EffectQuery.useEffectQuery(options).fetchStatus
+      fetchStatus = EffectReact.useEffectQuery(options).fetchStatus
       return null
     }
 
@@ -146,7 +146,7 @@ describe("makeEffectQueryRuntime", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let value: string | undefined
     let spanName: string | undefined
-    const { descriptor, EffectQuery, runtime } = makeQueryHarness(() =>
+    const { descriptor, EffectReact, runtime } = makeQueryHarness(() =>
       Effect.currentSpan.pipe(
         Effect.tap((span) => Effect.sync(() => (spanName = span.name))),
         Effect.as("executed"),
@@ -155,7 +155,7 @@ describe("makeEffectQueryRuntime", () => {
     const options = descriptor.options()
 
     const Probe = () => {
-      value = EffectQuery.useEffectQuery(options).data
+      value = EffectReact.useEffectQuery(options).data
       return null
     }
 
@@ -163,9 +163,9 @@ describe("makeEffectQueryRuntime", () => {
 
     await mount(
       <QueryClientProvider client={queryClient}>
-        <EffectQuery.Provider runtime={runtime}>
+        <EffectReact.Provider runtime={runtime}>
           <Probe />
-        </EffectQuery.Provider>
+        </EffectReact.Provider>
       </QueryClientProvider>,
     )
 
@@ -180,7 +180,7 @@ describe("makeEffectQueryRuntime", () => {
     const queryClient = new QueryClient()
     let attempts = 0
     let value: string | undefined
-    const { descriptor, EffectQuery, runtime } = makeQueryHarness(() => {
+    const { descriptor, EffectReact, runtime } = makeQueryHarness(() => {
       attempts += 1
       return attempts === 1 ? Effect.fail("retryable") : Effect.succeed("retried")
     })
@@ -192,15 +192,15 @@ describe("makeEffectQueryRuntime", () => {
     const settled = waitForStatus(queryClient, "success")
 
     const Probe = () => {
-      value = EffectQuery.useEffectQuery(options).data
+      value = EffectReact.useEffectQuery(options).data
       return null
     }
 
     await mount(
       <QueryClientProvider client={queryClient}>
-        <EffectQuery.Provider runtime={runtime}>
+        <EffectReact.Provider runtime={runtime}>
           <Probe />
-        </EffectQuery.Provider>
+        </EffectReact.Provider>
       </QueryClientProvider>,
     )
     await act(async () => settled)
@@ -214,20 +214,20 @@ describe("makeEffectQueryRuntime", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let executions = 0
     let value: string | undefined
-    const { descriptor, EffectQuery, runtime } = makeQueryHarness(() => {
+    const { descriptor, EffectReact, runtime } = makeQueryHarness(() => {
       executions += 1
       return Effect.succeed("hydrated")
     })
 
     const Probe = () => {
-      value = EffectQuery.useEffectQuery(descriptor.options()).data
+      value = EffectReact.useEffectQuery(descriptor.options()).data
       return null
     }
     const tree = (activeRuntime?: typeof runtime) => (
       <QueryClientProvider client={queryClient}>
-        <EffectQuery.Provider runtime={activeRuntime}>
+        <EffectReact.Provider runtime={activeRuntime}>
           <Probe />
-        </EffectQuery.Provider>
+        </EffectReact.Provider>
       </QueryClientProvider>
     )
 

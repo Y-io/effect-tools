@@ -6,7 +6,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import {
   EffectDefect,
   makeEffectMutationOptions,
-  makeEffectQueryRuntime,
+  makeEffectRuntime,
 } from "../../src/react-query/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -74,7 +74,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
       Effect.as(`updated:${input.path.id}`),
     )
   const runtime = makeManagedRuntime(Layer.succeed(TestClient, { users: { update: endpoint } }))
-  const EffectQuery = makeEffectQueryRuntime<Context.Tag.Identifier<typeof TestClient>>()
+  const EffectReact = makeEffectRuntime<Context.Tag.Identifier<typeof TestClient>>()
   const descriptor = makeEffectMutationOptions(
     TestClient,
     (client) => client.users.update,
@@ -85,7 +85,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
   let mutateAsync: ((variables: UpdateInput) => Promise<string>) | undefined
 
   const Probe = () => {
-    const mutation = EffectQuery.useEffectMutation({
+    const mutation = EffectReact.useEffectMutation({
       ...descriptor.options(),
       onMutate: (variables) => {
         events.push(`mutate:${variables.path.id}`)
@@ -101,9 +101,9 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
 
   await mount(
     <QueryClientProvider client={queryClient}>
-      <EffectQuery.Provider runtime={runtime}>
+      <EffectReact.Provider runtime={runtime}>
         <Probe />
-      </EffectQuery.Provider>
+      </EffectReact.Provider>
     </QueryClientProvider>,
   )
 
@@ -127,7 +127,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
 })
 
 test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", async () => {
-  const EffectQuery = makeEffectQueryRuntime<Context.Tag.Identifier<typeof TestClient>>()
+  const EffectReact = makeEffectRuntime<Context.Tag.Identifier<typeof TestClient>>()
   const descriptor = makeEffectMutationOptions(
     TestClient,
     (client) => client.users.update,
@@ -137,7 +137,7 @@ test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", 
   let mutateAsync: ((variables: UpdateInput) => Promise<string>) | undefined
 
   const Probe = () => {
-    mutateAsync = EffectQuery.useEffectMutation(descriptor.options()).mutateAsync
+    mutateAsync = EffectReact.useEffectMutation(descriptor.options()).mutateAsync
     return null
   }
 
@@ -167,7 +167,7 @@ test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", 
 test("无输入 endpoint 允许 mutateAsync()", async () => {
   const endpoint: HealthEndpoint = () => Effect.succeed("healthy")
   const runtime = makeManagedRuntime(Layer.succeed(HealthClient, { health: endpoint }))
-  const EffectQuery = makeEffectQueryRuntime<Context.Tag.Identifier<typeof HealthClient>>()
+  const EffectReact = makeEffectRuntime<Context.Tag.Identifier<typeof HealthClient>>()
   const descriptor = makeEffectMutationOptions(
     HealthClient,
     (client) => client.health,
@@ -177,15 +177,15 @@ test("无输入 endpoint 允许 mutateAsync()", async () => {
   let mutateAsync: (() => Promise<string>) | undefined
 
   const Probe = () => {
-    mutateAsync = EffectQuery.useEffectMutation(descriptor.options()).mutateAsync
+    mutateAsync = EffectReact.useEffectMutation(descriptor.options()).mutateAsync
     return null
   }
 
   await mount(
     <QueryClientProvider client={queryClient}>
-      <EffectQuery.Provider runtime={runtime}>
+      <EffectReact.Provider runtime={runtime}>
         <Probe />
-      </EffectQuery.Provider>
+      </EffectReact.Provider>
     </QueryClientProvider>,
   )
 

@@ -4,7 +4,7 @@ export class EffectDefect extends Data.TaggedError("EffectDefect")<{
   readonly cause: unknown
 }> {}
 
-export type EffectQueryRuntime<R> = ManagedRuntime.ManagedRuntime<R, unknown>
+export type EffectRuntimeHandle<R> = ManagedRuntime.ManagedRuntime<R, unknown>
 
 export const runEffect = <A, E, R>(
   runtime: Runtime.Runtime<R>,

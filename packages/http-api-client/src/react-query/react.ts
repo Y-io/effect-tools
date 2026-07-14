@@ -7,22 +7,22 @@ import {
 } from "@tanstack/react-query"
 import { Cause, Effect, Runtime } from "effect"
 import { createContext, createElement, useCallback, useContext, type ReactNode } from "react"
-import { EffectDefect, runEffect, type EffectQueryRuntime } from "./effect"
+import { EffectDefect, runEffect, type EffectRuntimeHandle } from "./effect"
 import type { EffectMutationOptions } from "./mutation"
 import type { EffectQueryOptions, JsonObject } from "./query"
 
-export const makeEffectQueryRuntime = <R>() => {
-  const RuntimeContext = createContext<EffectQueryRuntime<R> | undefined>(undefined)
+export const makeEffectRuntime = <R>() => {
+  const RuntimeContext = createContext<EffectRuntimeHandle<R> | undefined>(undefined)
 
   const Provider = ({
     children,
     runtime,
   }: {
     readonly children?: ReactNode
-    readonly runtime?: EffectQueryRuntime<R>
+    readonly runtime?: EffectRuntimeHandle<R>
   }) => createElement(RuntimeContext.Provider, { value: runtime }, children)
 
-  const useRuntime = (): EffectQueryRuntime<R> | undefined => useContext(RuntimeContext)
+  const useRuntime = (): EffectRuntimeHandle<R> | undefined => useContext(RuntimeContext)
 
   const useRunner = () => {
     const activeRuntime = useRuntime()

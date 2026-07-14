@@ -12,7 +12,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import {
   makeEffectMutationOptions,
   makeEffectQueryOptions,
-  makeEffectQueryRuntime,
+  makeEffectRuntime,
 } from "../../src/react-query/index"
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -91,7 +91,7 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
   }) {}
 
   const managedRuntime = ManagedRuntime.make(RealApiClient.Default)
-  const EffectQuery = makeEffectQueryRuntime<RealApiClient>()
+  const EffectReact = makeEffectRuntime<RealApiClient>()
   const lookupQuery = makeEffectQueryOptions(
     RealApiClient,
     (client) => client.users.lookup,
@@ -117,7 +117,7 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
     } = { data: undefined, error: undefined, status: "pending" }
 
     const Probe = () => {
-      const query = EffectQuery.useEffectQuery(options)
+      const query = EffectReact.useEffectQuery(options)
       snapshot = { data: query.data, error: query.error, status: query.status }
       return null
     }
@@ -127,9 +127,9 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
     await act(async () => {
       renderer = create(
         <QueryClientProvider client={queryClient}>
-          <EffectQuery.Provider runtime={managedRuntime}>
+          <EffectReact.Provider runtime={managedRuntime}>
             <Probe />
-          </EffectQuery.Provider>
+          </EffectReact.Provider>
         </QueryClientProvider>,
       )
     })
@@ -144,7 +144,7 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
     let mutateAsync: ((variables: LookupInput) => Promise<unknown>) | undefined
 
     const Probe = () => {
-      mutateAsync = EffectQuery.useEffectMutation(lookupMutation.options()).mutateAsync
+      mutateAsync = EffectReact.useEffectMutation(lookupMutation.options()).mutateAsync
       return null
     }
 
@@ -152,9 +152,9 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
     await act(async () => {
       renderer = create(
         <QueryClientProvider client={queryClient}>
-          <EffectQuery.Provider runtime={managedRuntime}>
+          <EffectReact.Provider runtime={managedRuntime}>
             <Probe />
-          </EffectQuery.Provider>
+          </EffectReact.Provider>
         </QueryClientProvider>,
       )
     })
