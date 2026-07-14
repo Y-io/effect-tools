@@ -91,7 +91,7 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
   }) {}
 
   const managedRuntime = ManagedRuntime.make(RealApiClient.Default)
-  const EffectQuery = makeEffectQueryRuntime(() => managedRuntime.runtime())
+  const EffectQuery = makeEffectQueryRuntime<RealApiClient>()
   const lookupQuery = makeEffectQueryOptions(
     RealApiClient,
     (client) => client.users.lookup,
@@ -127,7 +127,7 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
     await act(async () => {
       renderer = create(
         <QueryClientProvider client={queryClient}>
-          <EffectQuery.Provider>
+          <EffectQuery.Provider runtime={managedRuntime}>
             <Probe />
           </EffectQuery.Provider>
         </QueryClientProvider>,
@@ -152,7 +152,7 @@ test("真实 HttpApiClient Service 通过 Query 与 Mutation 执行请求", asyn
     await act(async () => {
       renderer = create(
         <QueryClientProvider client={queryClient}>
-          <EffectQuery.Provider>
+          <EffectQuery.Provider runtime={managedRuntime}>
             <Probe />
           </EffectQuery.Provider>
         </QueryClientProvider>,

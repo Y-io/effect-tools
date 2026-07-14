@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, expect, test } from "bun:test"
-import { Context, Effect, Runtime } from "effect"
+import { Context, Effect, Layer, ManagedRuntime } from "effect"
 import type { ReactElement } from "react"
 import { act, create, type ReactTestRenderer } from "react-test-renderer"
 import {
@@ -37,6 +37,7 @@ const HealthClient = Context.GenericTag<{
 }>("@pkg/http-api-client/react-query/test/HealthClient")
 
 const renderers: Array<ReactTestRenderer> = []
+const runtimes: Array<{ readonly dispose: () => Promise<void> }> = []
 
 const unmountAll = () => {
   for (const renderer of renderers.splice(0)) {
@@ -44,7 +45,16 @@ const unmountAll = () => {
   }
 }
 
-afterEach(unmountAll)
+afterEach(async () => {
+  unmountAll()
+  await Promise.all(runtimes.splice(0).map((runtime) => runtime.dispose()))
+})
+
+const makeManagedRuntime = <R, E>(layer: Layer.Layer<R, E, never>) => {
+  const runtime = ManagedRuntime.make(layer)
+  runtimes.push(runtime)
+  return runtime
+}
 
 const mount = async (node: ReactElement) => {
   let renderer: ReactTestRenderer
@@ -63,10 +73,8 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
       Effect.tap(() => Effect.sync(() => calls.push(input))),
       Effect.as(`updated:${input.path.id}`),
     )
-  const runtime = Runtime.defaultRuntime.pipe(
-    Runtime.provideService(TestClient, { users: { update: endpoint } }),
-  )
-  const EffectQuery = makeEffectQueryRuntime(() => runtime)
+  const runtime = makeManagedRuntime(Layer.succeed(TestClient, { users: { update: endpoint } }))
+  const EffectQuery = makeEffectQueryRuntime<Context.Tag.Identifier<typeof TestClient>>()
   const descriptor = makeEffectMutationOptions(
     TestClient,
     (client) => client.users.update,
@@ -93,7 +101,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
 
   await mount(
     <QueryClientProvider client={queryClient}>
-      <EffectQuery.Provider>
+      <EffectQuery.Provider runtime={runtime}>
         <Probe />
       </EffectQuery.Provider>
     </QueryClientProvider>,
@@ -119,7 +127,7 @@ test("useEffectMutation 执行 endpoint 并保留 TanStack callbacks", async () 
 })
 
 test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", async () => {
-  const EffectQuery = makeEffectQueryRuntime(() => Runtime.defaultRuntime)
+  const EffectQuery = makeEffectQueryRuntime<Context.Tag.Identifier<typeof TestClient>>()
   const descriptor = makeEffectMutationOptions(
     TestClient,
     (client) => client.users.update,
@@ -158,10 +166,8 @@ test("Provider 缺失时 mutation 通过默认 runtime 失败为 EffectDefect", 
 
 test("无输入 endpoint 允许 mutateAsync()", async () => {
   const endpoint: HealthEndpoint = () => Effect.succeed("healthy")
-  const runtime = Runtime.defaultRuntime.pipe(
-    Runtime.provideService(HealthClient, { health: endpoint }),
-  )
-  const EffectQuery = makeEffectQueryRuntime(() => runtime)
+  const runtime = makeManagedRuntime(Layer.succeed(HealthClient, { health: endpoint }))
+  const EffectQuery = makeEffectQueryRuntime<Context.Tag.Identifier<typeof HealthClient>>()
   const descriptor = makeEffectMutationOptions(
     HealthClient,
     (client) => client.health,
@@ -177,7 +183,7 @@ test("无输入 endpoint 允许 mutateAsync()", async () => {
 
   await mount(
     <QueryClientProvider client={queryClient}>
-      <EffectQuery.Provider>
+      <EffectQuery.Provider runtime={runtime}>
         <Probe />
       </EffectQuery.Provider>
     </QueryClientProvider>,

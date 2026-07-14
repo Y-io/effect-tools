@@ -1,5 +1,5 @@
-import { Context, Effect, Runtime } from "effect"
-import { makeEffectQueryRuntime, type EffectRuntimeLoader } from "../../src/react-query/index"
+import { Context, Effect, Layer, ManagedRuntime } from "effect"
+import { makeEffectQueryRuntime, type EffectQueryRuntime } from "../../src/react-query/index"
 
 class AvailableService extends Context.Tag("AvailableService")<
   AvailableService,
@@ -11,13 +11,17 @@ class MissingService extends Context.Tag("MissingService")<
   { readonly value: string }
 >() {}
 
-const runtime = Runtime.defaultRuntime.pipe(
-  Runtime.provideService(AvailableService, { value: "available" }),
-)
-const EffectQuery = makeEffectQueryRuntime(() => runtime)
+const runtime = ManagedRuntime.make(Layer.succeed(AvailableService, { value: "available" }))
+const missingRuntime = ManagedRuntime.make(Layer.succeed(MissingService, { value: "missing" }))
+const EffectQuery = makeEffectQueryRuntime<AvailableService>()
+type ProviderProps = Parameters<typeof EffectQuery.Provider>[0]
+
+const providerProps: ProviderProps = { runtime }
+// @ts-expect-error Provider runtime 必须包含 makeEffectQueryRuntime 声明的 Service
+const missingProviderProps: ProviderProps = { runtime: missingRuntime }
 
 const RuntimeTypeProbe = () => {
-  const loader: EffectRuntimeLoader<AvailableService> | undefined = EffectQuery.useRuntime()
+  const activeRuntime: EffectQueryRuntime<AvailableService> | undefined = EffectQuery.useRuntime()
   const run = EffectQuery.useRunner()
   const constrainedRunner: <A, E, R extends AvailableService>(
     effect: Effect.Effect<A, E, R>,
@@ -27,7 +31,9 @@ const RuntimeTypeProbe = () => {
   void constrainedRunner(AvailableService)
   void missingServiceIsExcluded
 
-  return loader
+  return activeRuntime
 }
 
 void RuntimeTypeProbe
+void providerProps
+void missingProviderProps

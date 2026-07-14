@@ -5,28 +5,27 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query"
-import { Effect, Runtime } from "effect"
+import { Cause, Effect, Runtime } from "effect"
 import { createContext, createElement, useCallback, useContext, type ReactNode } from "react"
-import { EffectDefect, runEffect, type EffectRuntimeLoader } from "./effect"
+import { EffectDefect, runEffect, type EffectQueryRuntime } from "./effect"
 import type { EffectMutationOptions } from "./mutation"
 import type { EffectQueryOptions, JsonObject } from "./query"
 
-export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>) => {
-  const RuntimeEnabledContext = createContext(false)
+export const makeEffectQueryRuntime = <R>() => {
+  const RuntimeContext = createContext<EffectQueryRuntime<R> | undefined>(undefined)
 
   const Provider = ({
     children,
-    enabled = true,
+    runtime,
   }: {
     readonly children?: ReactNode
-    readonly enabled?: boolean
-  }) => createElement(RuntimeEnabledContext.Provider, { value: enabled }, children)
+    readonly runtime?: EffectQueryRuntime<R>
+  }) => createElement(RuntimeContext.Provider, { value: runtime }, children)
 
-  const useRuntime = (): EffectRuntimeLoader<R> | undefined =>
-    useContext(RuntimeEnabledContext) ? runtimeLoader : undefined
+  const useRuntime = (): EffectQueryRuntime<R> | undefined => useContext(RuntimeContext)
 
   const useRunner = () => {
-    const activeRuntimeLoader = useRuntime()
+    const activeRuntime = useRuntime()
 
     return useCallback(
       async <A, E, EffectR extends R>(
@@ -36,30 +35,34 @@ export const makeEffectQueryRuntime = <R>(runtimeLoader: EffectRuntimeLoader<R>)
         let runtime: Runtime.Runtime<EffectR>
         try {
           runtime =
-            activeRuntimeLoader === undefined
+            activeRuntime === undefined
               ? (Runtime.defaultRuntime as Runtime.Runtime<EffectR>)
-              : ((await activeRuntimeLoader()) as Runtime.Runtime<EffectR>)
+              : ((await activeRuntime.runtime()) as Runtime.Runtime<EffectR>)
         } catch (cause) {
-          throw new EffectDefect({ cause })
+          throw new EffectDefect({
+            cause: Runtime.isFiberFailure(cause)
+              ? Cause.squash(cause[Runtime.FiberFailureCauseId])
+              : cause,
+          })
         }
 
         return runEffect(runtime, effect, options)
       },
-      [activeRuntimeLoader],
+      [activeRuntime],
     )
   }
 
   const useEffectQuery = <Input extends JsonObject, A, E, EffectR extends R, Data = A>(
     options: EffectQueryOptions<Input, A, E, EffectR, Data>,
   ): UseQueryResult<Data, E | EffectDefect> => {
-    const activeRuntimeLoader = useRuntime()
+    const activeRuntime = useRuntime()
     const run = useRunner()
     const { queryFn, ...tanStackOptions } = options
 
     return useQuery({
       ...tanStackOptions,
       queryFn:
-        activeRuntimeLoader === undefined
+        activeRuntime === undefined
           ? skipToken
           : ({ queryKey, signal }) => {
               return run(queryFn(queryKey[1] as Input).pipe(Effect.withSpan(queryKey[0])), {

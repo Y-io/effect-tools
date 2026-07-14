@@ -21,15 +21,15 @@ _Avoid_: 响应拦截器、Response Interceptor、Middleware
 _Avoid_: 数据获取框架、Query 框架、React Query 封装层
 
 **Effect Query Runtime Instance**：
-由 `makeEffectQueryRuntime(runtimeLoader)` 创建的应用绑定实例，从 loader 返回的 `Runtime.Runtime<R>` 推导并固定环境类型，返回同一 React context 上的 `Provider`、`useRuntime`、`useRunner` 与 `useEffectQuery`。`Provider` 只接收 `enabled`，不接收或执行 loader，因此可以同构渲染；`useRuntime` 在 Provider 启用时返回类型化 loader，否则返回 `undefined`；`useRunner` 专门等待 loader、为 Effect 提供其环境并执行，在 loader 不存在时只回退到 `Runtime.defaultRuntime`；`useEffectQuery` 使用同一实例判断 runtime 是否启用。实例不构建 Layer，也不拥有 runtime 的释放。
+由 `makeEffectQueryRuntime<R>()` 创建的应用绑定实例，显式固定环境类型，返回同一 React context 上的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。`Provider` 同步接收可选的 `EffectQueryRuntime<R>`；`useRuntime` 返回当前句柄或 `undefined`；`useRunner` 等待句柄内部的 Layer 构建、为 Effect 提供其环境并执行，在句柄不存在时只回退到 `Runtime.defaultRuntime`；`useEffectQuery` 使用同一实例判断 runtime 是否可用。实例不构建 Layer，也不拥有 runtime 的释放。
 _Avoid_: 包级 Runtime 单例、业务 Service 专用 Provider
 
-**Effect Runtime Loader**：
-应用组合层提供的惰性函数，返回已初始化的原始 `Runtime.Runtime<R>` 或其 Promise；它允许应用在浏览器条件成立后动态加载 `ManagedRuntime` 并调用 `.runtime()`，也允许注入独立的服务器 runtime。适配层不依赖 Router Context 或 `ManagedRuntime` 的 Layer 构建错误类型。
-_Avoid_: 静态 import 浏览器 runtime、在适配层构建 Layer
+**Effect Query Runtime**：
+应用组合层创建并拥有的 `ManagedRuntime<R, unknown>` 句柄。句柄同步进入 Provider，Layer 仍由 `ManagedRuntime` 在第一次执行 Effect 时惰性构建；构建失败转为 `EffectDefect`。应用决定 Browser/Server Layer 的组合、Router Context 注入和 `dispose()` 生命周期；适配层只消费句柄。
+_Avoid_: Runtime loader、Provider 内动态 import、在适配层构建 Layer
 
 **Missing Runtime Query**：
-Provider 缺失或 `enabled = false` 时，HttpApiClient endpoint query 使用 TanStack Query `skipToken`，不尝试用 `Runtime.defaultRuntime` 执行缺少 Service 的 Effect；默认 runtime 只属于通用 `useRunner` 的回退行为。
+Provider 缺失或其 runtime 为 `undefined` 时，HttpApiClient endpoint query 使用 TanStack Query `skipToken`，不尝试用 `Runtime.defaultRuntime` 执行缺少 Service 的 Effect；默认 runtime 只属于通用 `useRunner` 的回退行为。SSR 应通过 hydration gate 保证服务端与客户端首次渲染都缺失 Browser Runtime，hydration 后再注入。
 _Avoid_: SSR 时执行缺少 Service 的 endpoint、用默认 runtime 掩盖缺失依赖
 
 **Effect Query Key**：
@@ -66,4 +66,4 @@ _Avoid_: 将 request variables 或 payload 拼入 span 名
 
 ## React Query implementation scope
 
-实现 Query 与 Mutation descriptors，以及 `makeEffectQueryRuntime` 返回的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。runtime 由应用创建并负责释放；适配层只惰性取得并使用它。当前不承担 TanStack Query 的 `initialData` defined-result overload，也不透传 hooks 的第二个 QueryClient 参数。
+实现 Query 与 Mutation descriptors，以及 `makeEffectQueryRuntime` 返回的 `Provider`、`useRuntime`、`useRunner`、`useEffectQuery` 与 `useEffectMutation`。runtime 由应用创建并负责释放；适配层只取得同步传入的句柄，并在执行时等待其 Layer 构建。当前不承担 TanStack Query 的 `initialData` defined-result overload，也不透传 hooks 的第二个 QueryClient 参数。

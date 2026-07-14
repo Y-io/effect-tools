@@ -1,10 +1,10 @@
-import { Cause, Data, Effect, Exit, Runtime } from "effect"
+import { Cause, Data, Effect, Exit, ManagedRuntime, Runtime } from "effect"
 
 export class EffectDefect extends Data.TaggedError("EffectDefect")<{
   readonly cause: unknown
 }> {}
 
-export type EffectRuntimeLoader<R> = () => Runtime.Runtime<R> | PromiseLike<Runtime.Runtime<R>>
+export type EffectQueryRuntime<R> = ManagedRuntime.ManagedRuntime<R, unknown>
 
 export const runEffect = <A, E, R>(
   runtime: Runtime.Runtime<R>,

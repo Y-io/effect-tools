@@ -5,7 +5,7 @@ import {
   HttpApiGroup,
   HttpApiSchema,
 } from "@effect/platform"
-import { Effect, Runtime, Schema } from "effect"
+import { Effect, ManagedRuntime, Schema } from "effect"
 import {
   makeEffectMutationOptions,
   makeEffectQueryOptions,
@@ -169,8 +169,10 @@ void healthMutationKey
 void searchKey
 void handwrittenOptions
 
-declare const apiRuntime: Runtime.Runtime<ApiClient>
-const EffectQuery = makeEffectQueryRuntime(() => apiRuntime)
+declare const apiRuntime: ManagedRuntime.ManagedRuntime<ApiClient, never>
+const EffectQuery = makeEffectQueryRuntime<ApiClient>()
+type ProviderProps = Parameters<typeof EffectQuery.Provider>[0]
+const providerProps: ProviderProps = { runtime: apiRuntime }
 
 const MutationTypeProbe = () => {
   const health = EffectQuery.useEffectMutation(healthMutation.options())
@@ -215,3 +217,4 @@ const handwrittenMutationOptions: EffectMutationOptions<{}, string, never, never
 
 void MutationTypeProbe
 void handwrittenMutationOptions
+void providerProps
