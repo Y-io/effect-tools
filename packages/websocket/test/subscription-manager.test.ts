@@ -39,6 +39,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
+      subscriptionSchema: Schema.String,
       match: (_parsed: unknown, identity: string) => identity === "resource-1",
       subscription: (id: string) => ({
         identity: id,
@@ -100,6 +101,7 @@ describe("订阅管理器", () => {
   test("同一协议下不同 identity 的消息相互隔离", async () => {
     const protocol = defineProtocol({
       schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
+      subscriptionSchema: Schema.String,
       match: (parsed: unknown, identity: string) =>
         typeof parsed === "object" && parsed !== null && "id" in parsed && parsed.id === identity,
       subscription: (id: string) => ({ identity: id }),
@@ -155,6 +157,7 @@ describe("订阅管理器", () => {
   test("慢消费者只保留最新待处理值且新消费者不接收历史值", async () => {
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({ identity: "updates" }),
     })
@@ -229,6 +232,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
         identity: "updates",
@@ -294,6 +298,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "passive-updates",
       subscription: () => ({ identity: "passive-updates" }),
     })
@@ -350,6 +355,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
         identity: "updates",
@@ -410,6 +416,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
         identity: "updates",
@@ -470,11 +477,13 @@ describe("订阅管理器", () => {
     }
     const protocolA = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.String,
       match,
       subscription: (identity: string) => ({ identity }),
     })
     const protocolB = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.String,
       match,
       subscription: (identity: string) => ({ identity }),
     })
@@ -544,6 +553,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const updateProtocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (parsed: unknown, identity: string) =>
         typeof parsed === "object" &&
         parsed !== null &&
@@ -559,6 +569,7 @@ describe("订阅管理器", () => {
     })
     const statusProtocol = defineProtocol({
       schema: Schema.String,
+      subscriptionSchema: Schema.Void,
       match: (parsed: unknown, identity: string) =>
         typeof parsed === "object" &&
         parsed !== null &&
@@ -634,6 +645,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.String,
       match: (parsed: unknown, identity: string) => parsed === identity,
       subscription: (identity: string) => ({
         identity,

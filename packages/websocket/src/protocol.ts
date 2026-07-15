@@ -13,29 +13,37 @@ export interface SubscriptionDefinition {
 /** 一个入站消息协议及其订阅实例工厂。 */
 export interface ProtocolDefinition<
   MessageSchema extends Schema.Schema.AnyNoContext,
-  Subscription extends (...args: never[]) => SubscriptionDefinition,
+  SubscriptionSchema extends Schema.Schema.AnyNoContext,
+  Subscription extends (params: Schema.Schema.Type<SubscriptionSchema>) => SubscriptionDefinition,
 > {
   /** 对首个粗匹配命中的完整解析值执行最终解码。 */
   readonly schema: MessageSchema
+  /** 将 stream 的 encoded 参数解码为 subscription factory 所需的业务参数。 */
+  readonly subscriptionSchema: SubscriptionSchema
   /** 判断解析值是否属于指定 identity；不承担数据校验。 */
   readonly match: (parsed: unknown, identity: string) => boolean
-  /** 将业务参数转换为内部订阅定义。 */
+  /** 将解码后的业务参数转换为内部订阅定义。 */
   readonly subscription: Subscription
 }
 
 /** 仅用于约束异构协议目录的类型擦除形态。 */
 export type AnyProtocolDefinition = {
   readonly schema: Schema.Schema.AnyNoContext
+  readonly subscriptionSchema: Schema.Schema.AnyNoContext
   readonly match: (parsed: unknown, identity: string) => boolean
-  readonly subscription: (...args: never[]) => SubscriptionDefinition
+  readonly subscription: (params: never) => SubscriptionDefinition
 }
 
 /** 定义协议并保留 Schema 与 subscription 参数的精确类型。 */
 export const defineProtocol = <
   const MessageSchema extends Schema.Schema.AnyNoContext,
-  const Subscription extends (...args: never[]) => SubscriptionDefinition,
+  const SubscriptionSchema extends Schema.Schema.AnyNoContext,
+  const Subscription extends (
+    params: Schema.Schema.Type<SubscriptionSchema>,
+  ) => SubscriptionDefinition,
 >(definition: {
   readonly schema: MessageSchema
+  readonly subscriptionSchema: SubscriptionSchema
   readonly match: (parsed: unknown, identity: string) => boolean
   readonly subscription: Subscription
 }) => definition

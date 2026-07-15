@@ -6,11 +6,13 @@ describe("协议目录", () => {
   test("以具名条目组成目录并保留精确协议键", () => {
     const resourceUpdated = defineProtocol({
       schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
+      subscriptionSchema: Schema.String,
       match: (_parsed: unknown, identity: string) => identity.length > 0,
       subscription: (id: string) => ({ identity: id }),
     })
     const statusChanged = defineProtocol({
       schema: Schema.Struct({ id: Schema.String, active: Schema.Boolean }),
+      subscriptionSchema: Schema.String,
       match: (_parsed: unknown, identity: string) => identity.length > 0,
       subscription: (id: string) => ({ identity: id }),
     })
@@ -44,6 +46,7 @@ describe("协议目录", () => {
   test("初始化后不能增加、删除或替换协议定义", () => {
     const resourceUpdated = defineProtocol({
       schema: Schema.Struct({ id: Schema.String, value: Schema.Number }),
+      subscriptionSchema: Schema.String,
       match: (_parsed: unknown, identity: string) => identity.length > 0,
       subscription: (id: string) => ({ identity: id }),
     })

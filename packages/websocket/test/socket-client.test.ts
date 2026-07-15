@@ -6,6 +6,7 @@ import {
   Exit,
   Fiber,
   Option,
+  ParseResult,
   Ref,
   Schema,
   Scope,
@@ -23,12 +24,17 @@ const catalog = defineProtocolCatalog({
       resourceId: Schema.String,
       value: Schema.Number,
     }),
+    subscriptionSchema: Schema.parseJson(
+      Schema.Struct({
+        resourceId: Schema.String,
+      }),
+    ),
     match: (parsed: unknown, identity: string) =>
       typeof parsed === "object" &&
       parsed !== null &&
       "resourceId" in parsed &&
       parsed.resourceId === identity,
-    subscription: (resourceId: string) => ({
+    subscription: ({ resourceId }) => ({
       identity: resourceId,
       subscribe: () => `subscribe:${resourceId}`,
       unsubscribe: () => `unsubscribe:${resourceId}`,
@@ -36,7 +42,67 @@ const catalog = defineProtocolCatalog({
   }),
 })
 
+const subscriptionParams = (resourceId: string) => JSON.stringify({ resourceId })
+
 describe("Socket Client", () => {
+  test("通过协议 Schema 解码 JSON 订阅参数后建立业务 Stream", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+
+          const consumer = yield* client.updates
+            .stream(subscriptionParams("resource-1"))
+            .pipe(Stream.runDrain, Effect.forkScoped)
+
+          expect(yield* control.takeSent).toBe("subscribe:resource-1")
+          yield* Fiber.interrupt(consumer)
+        }),
+      ),
+    )
+  })
+
+  test("无效 JSON 订阅参数以 ParseError 失败且不建立订阅", async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+
+          const outcome = yield* Effect.race(
+            client.updates.stream("not-json").pipe(
+              Stream.runDrain,
+              Effect.match({
+                onFailure: (error) => ({ kind: "failure" as const, error }),
+                onSuccess: () => ({ kind: "success" as const }),
+              }),
+            ),
+            control.takeSent.pipe(
+              Effect.map((sentControl) => ({ kind: "control" as const, sentControl })),
+            ),
+          )
+
+          expect(outcome.kind).toBe("failure")
+          if (outcome.kind === "failure") {
+            expect(outcome.error).toBeInstanceOf(ParseResult.ParseError)
+          }
+          expect(yield* control.pollSent).toEqual(Option.none())
+        }),
+      ),
+    )
+  })
+
   test("生成类型安全的业务 Stream，并隔离 parser 与 Schema 失败", async () => {
     await Effect.runPromise(
       Effect.scoped(
@@ -55,8 +121,9 @@ describe("Socket Client", () => {
             readonly value: number
           }>()
 
-          const consumer = yield* Stream.runForEach(client.updates.stream("resource-1"), (value) =>
-            Deferred.succeed(message, value),
+          const consumer = yield* Stream.runForEach(
+            client.updates.stream(subscriptionParams("resource-1")),
+            (value) => Deferred.succeed(message, value),
           ).pipe(Effect.forkIn(consumerScope))
 
           expect(yield* control.takeSent).toBe("subscribe:resource-1")
@@ -101,9 +168,9 @@ describe("Socket Client", () => {
             socket: control.socket,
             parser: JSON.parse,
           })
-          const consumer = yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
-            Effect.forkScoped,
-          )
+          const consumer = yield* Stream.runDrain(
+            client.updates.stream(subscriptionParams("resource-1")),
+          ).pipe(Effect.forkScoped)
 
           expect(yield* control.takeSent).toBe("subscribe:resource-1")
           yield* control.disconnect(1006, "lost")
@@ -147,9 +214,9 @@ describe("Socket Client", () => {
             }),
           )
 
-          const consumer = yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
-            Effect.forkScoped,
-          )
+          const consumer = yield* Stream.runDrain(
+            client.updates.stream(subscriptionParams("resource-1")),
+          ).pipe(Effect.forkScoped)
           yield* control.closeCount.pipe(
             Effect.filterOrFail((count) => count === 1),
             Effect.eventually,
@@ -182,9 +249,9 @@ describe("Socket Client", () => {
             socket: control.socket,
             parser: JSON.parse,
           })
-          const consumer = yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
-            Effect.forkScoped,
-          )
+          const consumer = yield* Stream.runDrain(
+            client.updates.stream(subscriptionParams("resource-1")),
+          ).pipe(Effect.forkScoped)
 
           expect(yield* control.takeSent).toBe("subscribe:resource-1")
           yield* control.disconnect(1006, "lost")
@@ -218,7 +285,7 @@ describe("Socket Client", () => {
             socket: control.socket,
             parser: JSON.parse,
           }).pipe(Scope.extend(clientScope))
-          yield* Stream.runDrain(client.updates.stream("resource-1")).pipe(
+          yield* Stream.runDrain(client.updates.stream(subscriptionParams("resource-1"))).pipe(
             Effect.forkIn(clientScope),
           )
           expect(yield* control.takeSent).toBe("subscribe:resource-1")
@@ -251,14 +318,17 @@ describe("Socket Client", () => {
           const second = yield* Deferred.make<number>()
           const secondResource = yield* Deferred.make<number>()
 
-          yield* Stream.runForEach(client.updates.stream("resource-1"), (message) =>
-            Deferred.succeed(first, message.value),
+          yield* Stream.runForEach(
+            client.updates.stream(subscriptionParams("resource-1")),
+            (message) => Deferred.succeed(first, message.value),
           ).pipe(Effect.forkIn(firstScope))
-          yield* Stream.runForEach(client.updates.stream("resource-1"), (message) =>
-            Deferred.succeed(second, message.value),
+          yield* Stream.runForEach(
+            client.updates.stream(subscriptionParams("resource-1")),
+            (message) => Deferred.succeed(second, message.value),
           ).pipe(Effect.forkIn(secondScope))
-          yield* Stream.runForEach(client.updates.stream("resource-2"), (message) =>
-            Deferred.succeed(secondResource, message.value),
+          yield* Stream.runForEach(
+            client.updates.stream(subscriptionParams("resource-2")),
+            (message) => Deferred.succeed(secondResource, message.value),
           ).pipe(Effect.forkIn(secondResourceScope))
 
           expect(yield* control.takeSent).toBe("subscribe:resource-1")
@@ -288,13 +358,18 @@ describe("Socket Client", () => {
           identities: Schema.Array(Schema.String),
           value: Schema.Number,
         }),
+        subscriptionSchema: Schema.parseJson(
+          Schema.Struct({
+            identity: Schema.String,
+          }),
+        ),
         match: (parsed: unknown, identity: string) =>
           typeof parsed === "object" &&
           parsed !== null &&
           "identities" in parsed &&
           Array.isArray(parsed.identities) &&
           parsed.identities.includes(identity),
-        subscription: (identity: string) => ({ identity }),
+        subscription: ({ identity }) => ({ identity }),
       }),
     })
 
@@ -310,10 +385,10 @@ describe("Socket Client", () => {
           })
           const first = yield* Deferred.make<number>()
           const second = yield* Deferred.make<number>()
-          yield* Stream.runForEach(client.events.stream("first"), (message) =>
+          yield* Stream.runForEach(client.events.stream('{"identity":"first"}'), (message) =>
             Deferred.succeed(first, message.value),
           ).pipe(Effect.forkScoped)
-          yield* Stream.runForEach(client.events.stream("second"), (message) =>
+          yield* Stream.runForEach(client.events.stream('{"identity":"second"}'), (message) =>
             Deferred.succeed(second, message.value),
           ).pipe(Effect.forkScoped)
           yield* Effect.yieldNow()
@@ -341,9 +416,9 @@ describe("Socket Client", () => {
             parser: JSON.parse,
           })
 
-          expect(yield* Stream.runHead(client.updates.stream("resource-1"))).toEqual(
-            Option.some({ type: "update", resourceId: "resource-1", value: 101 }),
-          )
+          expect(
+            yield* Stream.runHead(client.updates.stream(subscriptionParams("resource-1"))),
+          ).toEqual(Option.some({ type: "update", resourceId: "resource-1", value: 101 }))
           expect(yield* control.takeSent).toBe("subscribe:resource-1")
           expect(yield* control.takeSent).toBe("unsubscribe:resource-1")
         }),
@@ -356,11 +431,12 @@ describe("Socket Client", () => {
     const passiveCatalog = defineProtocolCatalog({
       updates: defineProtocol({
         schema: Schema.Number,
+        subscriptionSchema: Schema.parseJson(Schema.Struct({})),
         match: (parsed: unknown, identity: string) => {
           matched.push(parsed)
           return identity === "updates"
         },
-        subscription: () => ({ identity: "updates" }),
+        subscription: (_params) => ({ identity: "updates" }),
       }),
     })
 
@@ -383,7 +459,7 @@ describe("Socket Client", () => {
             Effect.eventually,
           )
 
-          yield* Stream.runForEach(client.updates.stream(), (value) =>
+          yield* Stream.runForEach(client.updates.stream("{}"), (value) =>
             Effect.gen(function* () {
               if (value === 0) {
                 yield* Deferred.succeed(firstReady, undefined)
@@ -421,7 +497,7 @@ describe("Socket Client", () => {
           expect(values).toEqual([1, 3])
 
           const historical = yield* client.updates
-            .stream()
+            .stream("{}")
             .pipe(Stream.timeout("1 second"), Stream.runHead, Effect.fork)
           yield* TestClock.sleeps().pipe(
             Effect.filterOrFail((sleeps) => sleeps.length === 1),
@@ -451,7 +527,9 @@ describe("Socket Client", () => {
           const consumers = yield* Effect.forEach(
             scopes,
             (scope) =>
-              Stream.runDrain(client.updates.stream("resource-1")).pipe(Effect.forkIn(scope)),
+              Stream.runDrain(client.updates.stream(subscriptionParams("resource-1"))).pipe(
+                Effect.forkIn(scope),
+              ),
             { concurrency: "unbounded" },
           )
 

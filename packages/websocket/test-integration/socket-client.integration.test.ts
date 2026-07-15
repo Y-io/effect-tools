@@ -23,18 +23,26 @@ const catalog = defineProtocolCatalog({
       identity: Schema.String,
       value: Schema.Number,
     }),
+    subscriptionSchema: Schema.parseJson(
+      Schema.Struct({
+        identity: Schema.String,
+        value: Schema.Number,
+      }),
+    ),
     match: (parsed: unknown, identity: string) =>
       typeof parsed === "object" &&
       parsed !== null &&
       "identity" in parsed &&
       parsed.identity === identity,
-    subscription: (identity: string, value: number) => ({
+    subscription: ({ identity, value }) => ({
       identity,
       // Echo 返回该控制消息，用同一条真实 frame 验证 parser、match、Schema 和 Stream。
       subscribe: () => JSON.stringify({ type: "subscribe", identity, value }),
     }),
   }),
 })
+
+const subscriptionParams = (identity: string, value: number) => JSON.stringify({ identity, value })
 
 const withPublicClient = <A, E>(
   use: (
@@ -59,7 +67,7 @@ describe("Socket Client 公开 WebSocket 集成", () => {
     async () => {
       const result = await Effect.runPromise(
         withPublicClient((client) =>
-          client.updates.stream("integration:single", 101).pipe(
+          client.updates.stream(subscriptionParams("integration:single", 101)).pipe(
             Stream.runHead,
             Effect.timeoutFail({
               duration: "15 seconds",
@@ -84,8 +92,8 @@ describe("Socket Client 公开 WebSocket 集成", () => {
         withPublicClient((client) =>
           Effect.all(
             [
-              Stream.runHead(client.updates.stream("integration:first", 1)),
-              Stream.runHead(client.updates.stream("integration:second", 2)),
+              Stream.runHead(client.updates.stream(subscriptionParams("integration:first", 1))),
+              Stream.runHead(client.updates.stream(subscriptionParams("integration:second", 2))),
             ],
             { concurrency: "unbounded" },
           ).pipe(
@@ -116,13 +124,14 @@ describe("Socket Client 公开 WebSocket 集成", () => {
         withPublicClient((client) =>
           Effect.gen(function* () {
             const received = yield* Deferred.make<void>()
-            yield* Stream.runForEach(client.updates.stream("integration:shared", 1), () =>
-              Deferred.succeed(received, undefined),
+            yield* Stream.runForEach(
+              client.updates.stream(subscriptionParams("integration:shared", 1)),
+              () => Deferred.succeed(received, undefined),
             ).pipe(Effect.forkScoped)
             yield* Deferred.await(received)
 
             return yield* client.updates
-              .stream("integration:shared", 1)
+              .stream(subscriptionParams("integration:shared", 1))
               .pipe(Stream.timeout("2 seconds"), Stream.runHead)
           }),
         ),

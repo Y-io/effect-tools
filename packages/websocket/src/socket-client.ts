@@ -1,18 +1,18 @@
 import * as Socket from "@effect/platform/Socket"
 import { Effect, Either, Option, Schema, Stream } from "effect"
-import type { Scope } from "effect"
+import type { ParseResult, Scope } from "effect"
 import type { AnyProtocolDefinition } from "./protocol"
 import { makeSubscriptionManager } from "./subscription-manager"
 import { makeWebSocketConnection } from "./websocket-connection"
 
 type ProtocolStream<Protocol> = Protocol extends {
   readonly schema: infer MessageSchema extends Schema.Schema.AnyNoContext
-  readonly subscription: infer Subscription extends (...args: never[]) => unknown
+  readonly subscriptionSchema: infer SubscriptionSchema extends Schema.Schema.AnyNoContext
 }
   ? {
       readonly stream: (
-        ...args: Parameters<Subscription>
-      ) => Stream.Stream<Schema.Schema.Type<MessageSchema>>
+        params: Schema.Schema.Encoded<SubscriptionSchema>,
+      ) => Stream.Stream<Schema.Schema.Type<MessageSchema>, ParseResult.ParseError>
     }
   : never
 
@@ -114,8 +114,14 @@ export const makeSocketClient = <
       Object.entries(options.catalog).map(([protocolKey, protocol]) => [
         protocolKey,
         {
-          stream: (...args: ReadonlyArray<unknown>) =>
-            manager.stream(protocol, protocol.subscription(...(args as never[]))),
+          stream: (params: unknown) =>
+            Stream.unwrap(
+              Schema.decodeUnknown(protocol.subscriptionSchema)(params).pipe(
+                Effect.map((decoded) =>
+                  manager.stream(protocol, protocol.subscription(decoded as never)),
+                ),
+              ),
+            ),
         },
       ]),
     )
