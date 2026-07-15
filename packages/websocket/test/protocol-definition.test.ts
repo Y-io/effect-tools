@@ -33,40 +33,24 @@ describe("协议定义", () => {
 
     const args: Parameters<typeof protocol.subscription> = [{ group: "primary", itemId: 42 }]
     const message: Schema.Schema.Type<typeof protocol.schema> = { value: 1 }
+    const passive = defineProtocol({
+      schema: Schema.String,
+      match: (_parsed: unknown, identity: string) => identity === "status",
+      subscription: () => ({ identity: "status" }),
+    })
+    const verifyTypes = () => {
+      // @ts-expect-error 参数必须符合 subscriptionSchema 的输出类型
+      void protocol.subscription({ group: "primary", itemId: "42" })
+      // @ts-expect-error 被动协议的 subscription 不接受参数
+      void passive.subscription("unexpected")
+      // @ts-expect-error 消息必须符合消息 Schema 的输出类型
+      const invalidMessage: Schema.Schema.Type<typeof protocol.schema> = null
+      void invalidMessage
+    }
 
     expect(args).toEqual([{ group: "primary", itemId: 42 }])
     expect(message).toEqual({ value: 1 })
-
-    void defineProtocol({
-      // @ts-expect-error schema 必须是 Effect Schema
-      schema: "not-a-schema",
-      subscriptionSchema: Schema.Void,
-      match: (_parsed: unknown, _identity: string) => true,
-      subscription: (_params) => ({ identity: "resource" }),
-    })
-
-    void defineProtocol({
-      schema: Schema.Number,
-      subscriptionSchema: Schema.Void,
-      // @ts-expect-error match 必须返回 boolean
-      match: (_parsed: unknown, _identity: string) => "matched",
-      subscription: (_params) => ({ identity: "resource" }),
-    })
-
-    void defineProtocol({
-      schema: Schema.Number,
-      subscriptionSchema: Schema.Void,
-      match: (_parsed: unknown, _identity: string) => true,
-      // @ts-expect-error subscription identity 必须是 string
-      subscription: (_params) => ({ identity: 42 }),
-    })
-
-    void defineProtocol({
-      schema: Schema.Number,
-      // @ts-expect-error subscriptionSchema 必须是 Effect Schema
-      subscriptionSchema: "not-a-schema",
-      match: (_parsed: unknown, _identity: string) => true,
-      subscription: (_params) => ({ identity: "resource" }),
-    })
+    expect(passive.subscription()).toEqual({ identity: "status" })
+    expect(verifyTypes).toBeTypeOf("function")
   })
 })

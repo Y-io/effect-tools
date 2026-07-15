@@ -23,12 +23,10 @@ const catalog = defineProtocolCatalog({
       identity: Schema.String,
       value: Schema.Number,
     }),
-    subscriptionSchema: Schema.parseJson(
-      Schema.Struct({
-        identity: Schema.String,
-        value: Schema.Number,
-      }),
-    ),
+    subscriptionSchema: Schema.Struct({
+      identity: Schema.String,
+      value: Schema.Number,
+    }),
     match: (parsed: unknown, identity: string) =>
       typeof parsed === "object" &&
       parsed !== null &&
@@ -42,7 +40,7 @@ const catalog = defineProtocolCatalog({
   }),
 })
 
-const subscriptionParams = (identity: string, value: number) => JSON.stringify({ identity, value })
+const subscriptionParams = (identity: string, value: number) => ({ identity, value })
 
 const withPublicClient = <A, E>(
   use: (

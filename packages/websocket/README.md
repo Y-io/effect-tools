@@ -25,12 +25,10 @@ import { defineProtocol, defineProtocolCatalog, makeSocketClient } from "@pkg/we
 
 type Interval = "1m" | "3m"
 
-const TickerParams = Schema.parseJson(
-  Schema.Struct({
-    symbol: Schema.String,
-    interval: Schema.Literal("1m", "3m"),
-  }),
-)
+const TickerParams = Schema.Struct({
+  symbol: Schema.String,
+  interval: Schema.Literal("1m", "3m"),
+})
 
 const tickerIdentity = (symbol: string, interval: Interval) =>
   `ticker:${symbol}:${interval}`
@@ -48,7 +46,7 @@ const catalog = defineProtocolCatalog({
       timestamp: Schema.Number,
     }),
 
-    // stream 接收 JSON 字符串，解码成功后才建立订阅实例。
+    // stream 接收对象，解码成功后才建立订阅实例。
     subscriptionSchema: TickerParams,
 
     // match 只判断消息是否属于当前订阅实例，完整校验由 schema 负责。
@@ -80,9 +78,6 @@ const catalog = defineProtocolCatalog({
   }),
 })
 
-const tickerParams = (symbol: string, interval: Interval) =>
-  JSON.stringify({ symbol, interval })
-
 const program = Effect.scoped(
   Effect.gen(function* () {
     const socket = yield* Socket.makeWebSocket("wss://example.com/market")
@@ -94,12 +89,12 @@ const program = Effect.scoped(
 
     yield* Effect.all(
       [
-        client.ticker.stream(tickerParams("BTC-USDT", "1m")).pipe(
+        client.ticker.stream({ symbol: "BTC-USDT", interval: "1m" }).pipe(
           Stream.runForEach((message) =>
             Effect.sync(() => console.log("1m", message)),
           ),
         ),
-        client.ticker.stream(tickerParams("BTC-USDT", "3m")).pipe(
+        client.ticker.stream({ symbol: "BTC-USDT", interval: "3m" }).pipe(
           Stream.runForEach((message) =>
             Effect.sync(() => console.log("3m", message)),
           ),
@@ -114,15 +109,13 @@ const program = Effect.scoped(
 Effect.runPromise(program)
 ```
 
-`subscriptionSchema` 的 encoded 类型会成为对应 `stream` 方法的参数类型。上例使用 `Schema.parseJson(...)`，因此生成的 API 接收 JSON 字符串：
+`subscriptionSchema` 的 encoded 类型会成为对应 `stream` 方法的参数类型。上例使用 `Schema.Struct(...)`，因此生成的 API 直接接收对象：
 
 ```ts
-client.ticker.stream(
-  JSON.stringify({
-    symbol: "BTC-USDT",
-    interval: "1m",
-  }),
-)
+client.ticker.stream({
+  symbol: "BTC-USDT",
+  interval: "1m",
+})
 ```
 
 `1m` 与 `3m` 会生成不同的 `identity`，所以它们是相互隔离的订阅实例。服务端入站消息必须包含足以还原该 `identity` 的字段；如果服务端不返回 `interval`，客户端就无法据此区分两个周期，此时应使用服务端提供的频道 ID 等稳定路由字段。
@@ -162,7 +155,9 @@ const MarketClientLive = Layer.scoped(
 
 const marketRuntime = Atom.runtime(MarketClientLive)
 
-const tickerStream = (params: string) =>
+type TickerSubscription = typeof TickerParams.Encoded
+
+const tickerStream = (params: TickerSubscription) =>
   Stream.unwrap(
     Effect.map(MarketClient, (client) => client.ticker.stream(params)),
   )
@@ -178,7 +173,7 @@ const tickerStream = (params: string) =>
 import { Result, useAtomValue } from "@effect-atom/atom-react"
 
 const btcOneMinuteAtom = marketRuntime.atom(
-  tickerStream(tickerParams("BTC-USDT", "1m")),
+  tickerStream({ symbol: "BTC-USDT", interval: "1m" }),
 )
 
 export function BtcOneMinuteTicker() {
@@ -196,26 +191,25 @@ export function BtcOneMinuteTicker() {
 
 ### 维护多个行情
 
-业务参数在运行时确定时，使用 `Atom.family` 为每组参数取得稳定的 Atom。family key 使用 `tickerParams` 生成的规范 JSON 字符串；相同参数会得到相同字符串，不依赖对象引用：
+业务参数在运行时确定时，使用 `Atom.family` 为每组参数取得 Atom。配置对象在模块级声明，并由组件直接复用同一引用；不要在渲染期间为相同订阅重复创建对象：
 
 ```tsx
 import { Atom, Result, useAtomValue } from "@effect-atom/atom-react"
 
-const tickerAtom = Atom.family((params: string) =>
+const tickerAtom = Atom.family((params: TickerSubscription) =>
   marketRuntime.atom(tickerStream(params)),
 )
 
 interface TickerCardProps {
-  readonly symbol: string
-  readonly interval: Interval
+  readonly params: TickerSubscription
 }
 
-function TickerCard({ symbol, interval }: TickerCardProps) {
-  const result = useAtomValue(tickerAtom(tickerParams(symbol, interval)))
+function TickerCard({ params }: TickerCardProps) {
+  const result = useAtomValue(tickerAtom(params))
 
   return Result.builder(result)
-    .onInitial(() => <li>等待 {symbol} {interval} 行情...</li>)
-    .onFailure(() => <li>{symbol} {interval} 行情不可用</li>)
+    .onInitial(() => <li>等待 {params.symbol} {params.interval} 行情...</li>)
+    .onFailure(() => <li>{params.symbol} {params.interval} 行情不可用</li>)
     .onSuccess((ticker) => (
       <li>
         {ticker.symbol} {ticker.interval}: {ticker.price}
@@ -233,11 +227,10 @@ const subscriptions = [
 export function TickerDashboard() {
   return (
     <ul>
-      {subscriptions.map(({ symbol, interval }) => (
+      {subscriptions.map((params) => (
         <TickerCard
-          key={`${symbol}:${interval}`}
-          symbol={symbol}
-          interval={interval}
+          key={`${params.symbol}:${params.interval}`}
+          params={params}
         />
       ))}
     </ul>
@@ -245,14 +238,14 @@ export function TickerDashboard() {
 }
 ```
 
-每个 JSON 参数字符串都有独立的最新值状态和订阅生命周期。相同参数的多个组件会取得同一个 Atom，并复用同一个远端订阅；不同参数会得到相互隔离的订阅实例。移除一个 `TickerCard` 只会结束该组件对 Atom 的使用；仅当最后一个相同参数的组件卸载时才释放对应 Stream，不影响 Dashboard 中的其他行情。
+每个配置对象都有独立的最新值状态和订阅生命周期。多个组件复用同一个配置对象时会取得同一个 Atom，并复用同一个远端订阅；不同参数会得到相互隔离的订阅实例。移除一个 `TickerCard` 只会结束该组件对 Atom 的使用；仅当最后一个使用相同 Atom 的组件卸载时才释放对应 Stream，不影响 Dashboard 中的其他行情。
 
 这些行情 Atom 不使用 `Atom.keepAlive`。没有组件使用某个 Atom 时，应让它释放 Stream，使 `Socket Client` 能够自动结束不再需要的远端订阅。
 
 ## 自动生命周期
 
 - `makeSocketClient` 在当前 `Scope` 内自动维护连接；构造过程不等待首次连接成功。
-- 消费业务 Stream 时先用协议的 `subscriptionSchema` 解码参数；失败时以 `ParseError` 结束该 Stream，不建立订阅实例。
+- 消费带参数的业务 Stream 时先用协议的 `subscriptionSchema` 解码参数；失败时以 `ParseError` 结束该 Stream，不建立订阅实例。
 - 消费 `client.ticker.stream(...)` 时自动建立本地消费者。连接可用后，第一个消费者会触发对应的 `subscribe`。
 - 相同 `identity` 的多个消费者共享一个远端订阅，但各自都能消费同一条最新消息。
 - 消费者结束或被取消时自动释放；最后一个消费者退出后触发对应的 `unsubscribe`。
@@ -265,7 +258,19 @@ export function TickerDashboard() {
 
 ### `subscriptionSchema`
 
-`subscriptionSchema` 定义 `stream(...)` 接收的 encoded 参数及其运行时校验。使用 `Schema.parseJson(...)` 时，`stream` 接收 JSON 字符串，解码成功后才把业务对象交给 `subscription`。调用方应使用统一的 helper 生成 JSON，以保证语义相同的参数也具有相同的 Atom family key。
+`subscriptionSchema` 定义 `stream(...)` 接收的 encoded 参数及其运行时校验。使用 `Schema.Struct(...)` 时，`stream` 直接接收对象，解码成功后才把业务参数交给 `subscription`。无参数的被动协议不声明 `subscriptionSchema`，其 API 为 `stream()`。
+
+```ts
+const passiveCatalog = defineProtocolCatalog({
+  status: defineProtocol({
+    schema: StatusMessage,
+    match: (_parsed, identity) => identity === "status",
+    subscription: () => ({ identity: "status" }),
+  }),
+})
+
+client.status.stream()
+```
 
 ### `identity`
 

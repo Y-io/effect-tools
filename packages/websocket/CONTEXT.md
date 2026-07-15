@@ -9,7 +9,7 @@
 _Avoid_: 注册器、Registry
 
 **协议定义（Protocol Definition）**：
-协议目录中的一个具名条目，描述一种入站业务消息及其建立接收关系所需的信息；其消息 Schema 与订阅参数 Schema 由该协议下的全部订阅实例共享。
+协议目录中的一个具名条目，描述一种入站业务消息及其建立接收关系所需的信息；其消息 Schema 由该协议下的全部订阅实例共享，需要业务参数时还具有订阅参数 Schema。
 _Avoid_: 配置项、Handler
 
 **粗匹配（Coarse Match）**：

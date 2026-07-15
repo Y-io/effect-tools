@@ -24,11 +24,9 @@ const catalog = defineProtocolCatalog({
       resourceId: Schema.String,
       value: Schema.Number,
     }),
-    subscriptionSchema: Schema.parseJson(
-      Schema.Struct({
-        resourceId: Schema.String,
-      }),
-    ),
+    subscriptionSchema: Schema.Struct({
+      resourceId: Schema.String,
+    }),
     match: (parsed: unknown, identity: string) =>
       typeof parsed === "object" &&
       parsed !== null &&
@@ -42,10 +40,10 @@ const catalog = defineProtocolCatalog({
   }),
 })
 
-const subscriptionParams = (resourceId: string) => JSON.stringify({ resourceId })
+const subscriptionParams = (resourceId: string) => ({ resourceId })
 
 describe("Socket Client", () => {
-  test("通过协议 Schema 解码 JSON 订阅参数后建立业务 Stream", async () => {
+  test("通过协议 Schema 解码对象订阅参数后建立业务 Stream", async () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -68,7 +66,7 @@ describe("Socket Client", () => {
     )
   })
 
-  test("无效 JSON 订阅参数以 ParseError 失败且不建立订阅", async () => {
+  test("无效对象订阅参数以 ParseError 失败且不建立订阅", async () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -81,7 +79,7 @@ describe("Socket Client", () => {
           })
 
           const outcome = yield* Effect.race(
-            client.updates.stream("not-json").pipe(
+            client.updates.stream({ resourceId: 42 } as never).pipe(
               Stream.runDrain,
               Effect.match({
                 onFailure: (error) => ({ kind: "failure" as const, error }),
@@ -97,6 +95,45 @@ describe("Socket Client", () => {
           if (outcome.kind === "failure") {
             expect(outcome.error).toBeInstanceOf(ParseResult.ParseError)
           }
+          expect(yield* control.pollSent).toEqual(Option.none())
+        }),
+      ),
+    )
+  })
+
+  test("无参数被动协议直接通过 stream() 接收消息", async () => {
+    const passiveCatalog = defineProtocolCatalog({
+      updates: defineProtocol({
+        schema: Schema.Number,
+        match: (_parsed: unknown, identity: string) => identity === "passive-updates",
+        subscription: () => ({ identity: "passive-updates" }),
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog: passiveCatalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+          const message = yield* Deferred.make<number>()
+          const consumer = yield* client.updates.stream().pipe(
+            Stream.runForEach((value) => Deferred.succeed(message, value)),
+            Effect.forkScoped,
+          )
+
+          yield* Effect.yieldNow()
+          yield* control.emitFrame("1")
+          const outcome = yield* Effect.race(
+            Deferred.await(message).pipe(Effect.as("message" as const)),
+            Fiber.await(consumer).pipe(Effect.as("ended" as const)),
+          )
+
+          expect(outcome).toBe("message")
           expect(yield* control.pollSent).toEqual(Option.none())
         }),
       ),
@@ -358,11 +395,9 @@ describe("Socket Client", () => {
           identities: Schema.Array(Schema.String),
           value: Schema.Number,
         }),
-        subscriptionSchema: Schema.parseJson(
-          Schema.Struct({
-            identity: Schema.String,
-          }),
-        ),
+        subscriptionSchema: Schema.Struct({
+          identity: Schema.String,
+        }),
         match: (parsed: unknown, identity: string) =>
           typeof parsed === "object" &&
           parsed !== null &&
@@ -385,10 +420,10 @@ describe("Socket Client", () => {
           })
           const first = yield* Deferred.make<number>()
           const second = yield* Deferred.make<number>()
-          yield* Stream.runForEach(client.events.stream('{"identity":"first"}'), (message) =>
+          yield* Stream.runForEach(client.events.stream({ identity: "first" }), (message) =>
             Deferred.succeed(first, message.value),
           ).pipe(Effect.forkScoped)
-          yield* Stream.runForEach(client.events.stream('{"identity":"second"}'), (message) =>
+          yield* Stream.runForEach(client.events.stream({ identity: "second" }), (message) =>
             Deferred.succeed(second, message.value),
           ).pipe(Effect.forkScoped)
           yield* Effect.yieldNow()
@@ -431,12 +466,11 @@ describe("Socket Client", () => {
     const passiveCatalog = defineProtocolCatalog({
       updates: defineProtocol({
         schema: Schema.Number,
-        subscriptionSchema: Schema.parseJson(Schema.Struct({})),
         match: (parsed: unknown, identity: string) => {
           matched.push(parsed)
           return identity === "updates"
         },
-        subscription: (_params) => ({ identity: "updates" }),
+        subscription: () => ({ identity: "updates" }),
       }),
     })
 
@@ -459,7 +493,7 @@ describe("Socket Client", () => {
             Effect.eventually,
           )
 
-          yield* Stream.runForEach(client.updates.stream("{}"), (value) =>
+          yield* Stream.runForEach(client.updates.stream(), (value) =>
             Effect.gen(function* () {
               if (value === 0) {
                 yield* Deferred.succeed(firstReady, undefined)
@@ -497,7 +531,7 @@ describe("Socket Client", () => {
           expect(values).toEqual([1, 3])
 
           const historical = yield* client.updates
-            .stream("{}")
+            .stream()
             .pipe(Stream.timeout("1 second"), Stream.runHead, Effect.fork)
           yield* TestClock.sleeps().pipe(
             Effect.filterOrFail((sleeps) => sleeps.length === 1),

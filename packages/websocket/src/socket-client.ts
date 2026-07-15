@@ -14,7 +14,14 @@ type ProtocolStream<Protocol> = Protocol extends {
         params: Schema.Schema.Encoded<SubscriptionSchema>,
       ) => Stream.Stream<Schema.Schema.Type<MessageSchema>, ParseResult.ParseError>
     }
-  : never
+  : Protocol extends {
+        readonly schema: infer MessageSchema extends Schema.Schema.AnyNoContext
+        readonly subscription: () => unknown
+      }
+    ? {
+        readonly stream: () => Stream.Stream<Schema.Schema.Type<MessageSchema>>
+      }
+    : never
 
 /** 从协议目录生成的业务 Stream API。 */
 export type SocketClient<Catalog extends Readonly<Record<string, AnyProtocolDefinition>>> = {
@@ -113,16 +120,20 @@ export const makeSocketClient = <
     const client = Object.fromEntries(
       Object.entries(options.catalog).map(([protocolKey, protocol]) => [
         protocolKey,
-        {
-          stream: (params: unknown) =>
-            Stream.unwrap(
-              Schema.decodeUnknown(protocol.subscriptionSchema)(params).pipe(
-                Effect.map((decoded) =>
-                  manager.stream(protocol, protocol.subscription(decoded as never)),
+        "subscriptionSchema" in protocol
+          ? {
+              stream: (params: unknown) =>
+                Stream.unwrap(
+                  Schema.decodeUnknown(protocol.subscriptionSchema)(params).pipe(
+                    Effect.map((decoded) =>
+                      manager.stream(protocol, protocol.subscription(decoded as never)),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-        },
+            }
+          : {
+              stream: () => manager.stream(protocol, protocol.subscription()),
+            },
       ]),
     )
 
