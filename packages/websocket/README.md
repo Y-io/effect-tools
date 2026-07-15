@@ -245,7 +245,7 @@ export function TickerDashboard() {
 ## 自动生命周期
 
 - `makeSocketClient` 在当前 `Scope` 内自动维护连接；构造过程不等待首次连接成功。
-- 消费带参数的业务 Stream 时先用协议的 `subscriptionSchema` 解码参数；失败时以 `ParseError` 结束该 Stream，不建立订阅实例。
+- 消费业务 Stream 时先用协议的 `subscriptionSchema` 解码参数；失败时以 `ParseError` 结束该 Stream，不建立订阅实例。
 - 消费 `client.ticker.stream(...)` 时自动建立本地消费者。连接可用后，第一个消费者会触发对应的 `subscribe`。
 - 相同 `identity` 的多个消费者共享一个远端订阅，但各自都能消费同一条最新消息。
 - 消费者结束或被取消时自动释放；最后一个消费者退出后触发对应的 `unsubscribe`。
@@ -258,12 +258,13 @@ export function TickerDashboard() {
 
 ### `subscriptionSchema`
 
-`subscriptionSchema` 定义 `stream(...)` 接收的 encoded 参数及其运行时校验。使用 `Schema.Struct(...)` 时，`stream` 直接接收对象，解码成功后才把业务参数交给 `subscription`。无参数的被动协议不声明 `subscriptionSchema`，其 API 为 `stream()`。
+`subscriptionSchema` 决定 `stream(...)` 的参数类型及其运行时校验。使用 `Schema.Struct(...)` 时，`stream` 直接接收对象；使用 `Schema.String` 时接收字符串；使用 `Schema.Void` 时不接收参数，API 为 `stream()`。解码成功后才会把结果交给 `subscription`。
 
 ```ts
 const passiveCatalog = defineProtocolCatalog({
   status: defineProtocol({
     schema: StatusMessage,
+    subscriptionSchema: Schema.Void,
     match: (_parsed, identity) => identity === "status",
     subscription: () => ({ identity: "status" }),
   }),

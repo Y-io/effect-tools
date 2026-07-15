@@ -105,6 +105,7 @@ describe("Socket Client", () => {
     const passiveCatalog = defineProtocolCatalog({
       updates: defineProtocol({
         schema: Schema.Number,
+        subscriptionSchema: Schema.Void,
         match: (_parsed: unknown, identity: string) => identity === "passive-updates",
         subscription: () => ({ identity: "passive-updates" }),
       }),
@@ -466,6 +467,7 @@ describe("Socket Client", () => {
     const passiveCatalog = defineProtocolCatalog({
       updates: defineProtocol({
         schema: Schema.Number,
+        subscriptionSchema: Schema.Void,
         match: (parsed: unknown, identity: string) => {
           matched.push(parsed)
           return identity === "updates"

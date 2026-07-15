@@ -35,6 +35,7 @@ describe("协议定义", () => {
     const message: Schema.Schema.Type<typeof protocol.schema> = { value: 1 }
     const passive = defineProtocol({
       schema: Schema.String,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "status",
       subscription: () => ({ identity: "status" }),
     })
@@ -46,6 +47,12 @@ describe("协议定义", () => {
       // @ts-expect-error 消息必须符合消息 Schema 的输出类型
       const invalidMessage: Schema.Schema.Type<typeof protocol.schema> = null
       void invalidMessage
+      // @ts-expect-error 每个协议都必须由 subscriptionSchema 决定参数类型
+      void defineProtocol({
+        schema: Schema.String,
+        match: (_parsed: unknown, identity: string) => identity === "missing-schema",
+        subscription: () => ({ identity: "missing-schema" }),
+      })
     }
 
     expect(args).toEqual([{ group: "primary", itemId: 42 }])

@@ -157,6 +157,7 @@ describe("订阅管理器", () => {
   test("慢消费者只保留最新待处理值且新消费者不接收历史值", async () => {
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({ identity: "updates" }),
     })
@@ -231,6 +232,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
         identity: "updates",
@@ -296,6 +298,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "passive-updates",
       subscription: () => ({ identity: "passive-updates" }),
     })
@@ -352,6 +355,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
         identity: "updates",
@@ -412,6 +416,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const protocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (_parsed: unknown, identity: string) => identity === "updates",
       subscription: () => ({
         identity: "updates",
@@ -548,6 +553,7 @@ describe("订阅管理器", () => {
     const controls: Array<string> = []
     const updateProtocol = defineProtocol({
       schema: Schema.Number,
+      subscriptionSchema: Schema.Void,
       match: (parsed: unknown, identity: string) =>
         typeof parsed === "object" &&
         parsed !== null &&
@@ -563,6 +569,7 @@ describe("订阅管理器", () => {
     })
     const statusProtocol = defineProtocol({
       schema: Schema.String,
+      subscriptionSchema: Schema.Void,
       match: (parsed: unknown, identity: string) =>
         typeof parsed === "object" &&
         parsed !== null &&

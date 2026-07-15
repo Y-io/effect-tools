@@ -5,23 +5,22 @@ import type { AnyProtocolDefinition } from "./protocol"
 import { makeSubscriptionManager } from "./subscription-manager"
 import { makeWebSocketConnection } from "./websocket-connection"
 
+type ProtocolStreamArgs<SubscriptionSchema extends Schema.Schema.AnyNoContext> = [
+  Schema.Schema.Encoded<SubscriptionSchema>,
+] extends [void]
+  ? []
+  : [params: Schema.Schema.Encoded<SubscriptionSchema>]
+
 type ProtocolStream<Protocol> = Protocol extends {
   readonly schema: infer MessageSchema extends Schema.Schema.AnyNoContext
   readonly subscriptionSchema: infer SubscriptionSchema extends Schema.Schema.AnyNoContext
 }
   ? {
       readonly stream: (
-        params: Schema.Schema.Encoded<SubscriptionSchema>,
+        ...args: ProtocolStreamArgs<SubscriptionSchema>
       ) => Stream.Stream<Schema.Schema.Type<MessageSchema>, ParseResult.ParseError>
     }
-  : Protocol extends {
-        readonly schema: infer MessageSchema extends Schema.Schema.AnyNoContext
-        readonly subscription: () => unknown
-      }
-    ? {
-        readonly stream: () => Stream.Stream<Schema.Schema.Type<MessageSchema>>
-      }
-    : never
+  : never
 
 /** 从协议目录生成的业务 Stream API。 */
 export type SocketClient<Catalog extends Readonly<Record<string, AnyProtocolDefinition>>> = {
@@ -120,20 +119,16 @@ export const makeSocketClient = <
     const client = Object.fromEntries(
       Object.entries(options.catalog).map(([protocolKey, protocol]) => [
         protocolKey,
-        "subscriptionSchema" in protocol
-          ? {
-              stream: (params: unknown) =>
-                Stream.unwrap(
-                  Schema.decodeUnknown(protocol.subscriptionSchema)(params).pipe(
-                    Effect.map((decoded) =>
-                      manager.stream(protocol, protocol.subscription(decoded as never)),
-                    ),
-                  ),
+        {
+          stream: (...args: ReadonlyArray<unknown>) =>
+            Stream.unwrap(
+              Schema.decodeUnknown(protocol.subscriptionSchema)(args[0]).pipe(
+                Effect.map((decoded) =>
+                  manager.stream(protocol, protocol.subscription(decoded as never)),
                 ),
-            }
-          : {
-              stream: () => manager.stream(protocol, protocol.subscription()),
-            },
+              ),
+            ),
+        },
       ]),
     )
 
