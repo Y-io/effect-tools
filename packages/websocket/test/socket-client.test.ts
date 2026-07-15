@@ -14,7 +14,12 @@ import {
   TestClock,
   TestContext,
 } from "effect"
-import { defineProtocol, defineProtocolCatalog, makeSocketClient } from "../src/index"
+import {
+  defineProtocol,
+  defineProtocolCatalog,
+  makeSocketClient,
+  type SocketClient,
+} from "../src/index"
 import { makeControllableSocket } from "./support/controllable-websocket-connection"
 
 const catalog = defineProtocolCatalog({
@@ -41,6 +46,21 @@ const catalog = defineProtocolCatalog({
 })
 
 const subscriptionParams = (resourceId: string) => ({ resourceId })
+
+const stringCatalog = defineProtocolCatalog({
+  status: defineProtocol({
+    schema: Schema.String,
+    subscriptionSchema: Schema.String,
+    match: (parsed: unknown, identity: string) => parsed === identity,
+    subscription: (identity) => ({ identity }),
+  }),
+})
+
+const verifyStringStreamType = (client: SocketClient<typeof stringCatalog>) => {
+  void client.status.stream("status")
+  // @ts-expect-error Schema.String 的 encoded 参数必须是 string
+  void client.status.stream(1)
+}
 
 describe("Socket Client", () => {
   test("通过协议 Schema 解码对象订阅参数后建立业务 Stream", async () => {
@@ -136,6 +156,45 @@ describe("Socket Client", () => {
 
           expect(outcome).toBe("message")
           expect(yield* control.pollSent).toEqual(Option.none())
+        }),
+      ),
+    )
+  })
+
+  test("transformation Schema 决定 stream encoded 参数与 subscription decoded 参数", async () => {
+    const transformedCatalog = defineProtocolCatalog({
+      updates: defineProtocol({
+        schema: Schema.Number,
+        subscriptionSchema: Schema.NumberFromString,
+        match: (_parsed: unknown, identity: string) => identity === "resource:42",
+        subscription: (resourceId) => {
+          const decodedResourceId: number = resourceId
+          return {
+            identity: `resource:${decodedResourceId}`,
+            subscribe: () => `subscribe:${decodedResourceId}`,
+          }
+        },
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const control = yield* makeControllableSocket()
+          yield* control.open
+          const client = yield* makeSocketClient({
+            catalog: transformedCatalog,
+            socket: control.socket,
+            parser: JSON.parse,
+          })
+
+          const consumer = yield* client.updates
+            .stream("42")
+            .pipe(Stream.runDrain, Effect.forkScoped)
+
+          expect(yield* control.takeSent).toBe("subscribe:42")
+          expect(verifyStringStreamType).toBeTypeOf("function")
+          yield* Fiber.interrupt(consumer)
         }),
       ),
     )
